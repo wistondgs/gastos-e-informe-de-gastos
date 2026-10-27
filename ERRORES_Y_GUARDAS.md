@@ -55,6 +55,17 @@
 
 ---
 
+## E-04 · Se ofreció un PDF individual sin un informe de la gestión completa
+**Clase:** criterio · **Veces que saltó:** 1 · El propietario señaló que no obtenía un informe final de su jornada.
+**2026-10-27, ajuste de informe (error de Codex).** La implementación existente `pdf` en `src/exportaciones/informes.js` recibía una sola compra; no existía un informe que reuniera las compras de la gestión.
+**Por qué.** Al entregar el primer recorrido se verificó la exportación de una compra, sin comprobar si cubría el informe agrupado que el propietario necesitaba después de su jornada.
+**Severidad.** Informe incompleto y confusión sobre la capacidad disponible; sin cambio en datos ni saldos.
+**Firma (cómo se detecta).** El único botón PDF depende de seleccionar una compra y no hay opción de generar un informe de la gestión completa.
+**Guarda** `[MECÁNICA]`: probar un informe con dos compras y dos monedas, verificar ambas cantidades y factura, y rechazar una compra de otra gestión.
+**Aplicada en:** `tests/informe-gestion.test.js` y `src/exportaciones/informes.js` (`pdfGestion`). Mutante observado: antes de implementar `pdfGestion`, la prueba falló al no existir la exportación agrupada.
+
+---
+
 ## Ejes no vigilados (agujeros declarados)
 
 *Un registro sin eventos pero con ejes no vigilados no es un certificado de salud: es un certificado con agujeros declarados.*

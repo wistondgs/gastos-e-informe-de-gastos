@@ -12,12 +12,18 @@ import {
 } from "../datos/archivos.js";
 import { centavos, dinero } from "../dominio/compra.js";
 import { guardarCompra, verificarImagen } from "../dominio/operaciones.js";
-import { excel, pdf } from "../exportaciones/informes.js";
+import { excel, pdf, pdfGestion } from "../exportaciones/informes.js";
 import { crearRespaldo, restaurarRespaldo } from "../datos/respaldo.js";
+import {
+  informesLocales,
+  CARPETA_INFORMES,
+} from "../datos/informes-locales.js";
 const repo = ref(null),
   compras = ref([]),
   filtroGestion = ref(null),
   gestiones = ref([]),
+  estadoHistorial = ref("todas"),
+  informesGuardados = ref([]),
   nombreGestion = ref(""),
   inicioGestion = ref(""),
   cierreId = ref(null),
@@ -38,6 +44,13 @@ function ir(destino) {
   mensaje.value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+const gestionesVisibles = computed(() =>
+  gestiones.value.filter(
+    (g) =>
+      estadoHistorial.value === "todas" ||
+      (estadoHistorial.value === "abiertas" ? !g.fecha_fin : !!g.fecha_fin),
+  ),
+);
 const comprasVisibles = computed(() =>
   filtroGestion.value
     ? compras.value.filter((c) => c.gestion_id === filtroGestion.value)
@@ -245,6 +258,52 @@ async function exportar(formato, conFotos = true) {
     );
   });
 }
+async function exportarGestion(g, incluirFotos) {
+  await operacion(async () => {
+    const comprasGestion = compras.value.filter((c) => c.gestion_id === g.id);
+    const items = [];
+    for (const compra of comprasGestion)
+      items.push({ compra, fotos: await repo.value.fotos(compra.id) });
+    const bytes = await pdfGestion(
+      g,
+      items,
+      archivos,
+      encabezado.value,
+      incluirFotos,
+    );
+    await informesLocales.guardar(g.id, bytes);
+    await cargarInformes();
+    mensaje.value =
+      Capacitor.getPlatform() === "android"
+        ? `Informe guardado en Documentos/${CARPETA_INFORMES}.`
+        : nativo
+          ? `Informe guardado en ${CARPETA_INFORMES} dentro de la aplicación.`
+          : "Informe guardado en el almacenamiento de este navegador de prueba.";
+  });
+}
+async function cargarInformes() {
+  informesGuardados.value = await informesLocales.listar();
+}
+async function abrirInformes() {
+  await operacion(async () => {
+    await cargarInformes();
+    pantalla.value = "informes";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+function etiquetaInforme(nombre) {
+  const match = nombre.match(/^informe-gestion-(.+?)--(\d{8}T\d{6})--/);
+  if (!match) return nombre;
+  const g = gestiones.value.find((item) => item.id === match[1]);
+  const d = match[2];
+  return `${g?.nombre || "Gestión no disponible"} · ${d.slice(6, 8)}/${d.slice(4, 6)}/${d.slice(0, 4)} ${d.slice(9, 11)}:${d.slice(11, 13)} UTC`;
+}
+async function abrirInforme(nombre) {
+  await operacion(async () => {
+    const bytes = await informesLocales.leer(nombre);
+    await compartir(nombre, bytes, "application/pdf");
+  });
+}
 async function guardarEncabezado() {
   await operacion(async () => {
     await repo.value.guardarAjuste(encabezado.value.trim());
@@ -351,11 +410,25 @@ const nativo = Capacitor.isNativePlatform();
           </button>
         </form>
         <div class="gestion-list">
-          <h3>Gestiones guardadas</h3>
+          <h3>Historial de gestiones</h3>
+          <label
+            >Mostrar<select v-model="estadoHistorial">
+              <option value="todas">Todas las gestiones</option>
+              <option value="abiertas">Abiertas</option>
+              <option value="terminadas">Terminadas</option>
+            </select></label
+          >
           <p v-if="!gestiones.length" class="hint">
             Todavía no hay gestiones. Creá la primera para empezar.
           </p>
-          <article v-for="g in gestiones" :key="g.id" class="gestion-item">
+          <p v-if="gestiones.length && !gestionesVisibles.length" class="hint">
+            No hay gestiones en esta selección.
+          </p>
+          <article
+            v-for="g in gestionesVisibles"
+            :key="g.id"
+            class="gestion-item"
+          >
             <div>
               <strong>{{ g.nombre }}</strong>
               <p class="hint">
@@ -372,7 +445,27 @@ const nativo = Capacitor.isNativePlatform();
               >
                 Ver compras
               </button>
+              <button
+                type="button"
+                class="text-control"
+                :disabled="ocupado"
+                @click="exportarGestion(g, true)"
+              >
+                PDF con fotos
+              </button>
+              <button
+                type="button"
+                class="text-control"
+                :disabled="ocupado"
+                @click="exportarGestion(g, false)"
+              >
+                PDF sin fotos
+              </button>
             </div>
+            <p class="hint">
+              El PDF incluye todas las compras de esta gestión; todavía no se
+              filtra por empresa o destinatario. Revisalo antes de compartirlo.
+            </p>
             <div v-if="!g.fecha_fin" class="button-row">
               <button
                 type="button"
@@ -580,6 +673,9 @@ const nativo = Capacitor.isNativePlatform();
       </section>
       <section v-show="pantalla === 'compras'" class="card">
         <h2>Compras guardadas</h2>
+        <p class="hint">
+          Las compras anteriores sin gestión aparecen como «Sin gestión».
+        </p>
         <p v-if="filtroGestion" class="hint">
           Gestión: {{ gestiones.find((g) => g.id === filtroGestion)?.nombre }} ·
           <button
@@ -655,8 +751,53 @@ const nativo = Capacitor.isNativePlatform();
           </button>
         </div>
       </section>
+      <section v-show="pantalla === 'informes'" class="card">
+        <h2>Informes guardados</h2>
+        <p v-if="nativo && Capacitor.getPlatform() === 'android'" class="hint">
+          Informes PDF en Documentos/«{{ CARPETA_INFORMES }}». Para abrir uno,
+          elegí una aplicación disponible en tu teléfono.
+        </p>
+        <p v-else-if="nativo" class="hint">
+          Informes guardados dentro de esta aplicación. Para abrir uno, elegí
+          una aplicación disponible en tu teléfono.
+        </p>
+        <p v-else class="hint">Informes guardados en el navegador de prueba.</p>
+        <p v-if="!informesGuardados.length" class="hint">
+          Todavía no hay informes guardados. Generá uno desde una gestión.
+        </p>
+        <button
+          v-for="nombre in informesGuardados"
+          :key="nombre"
+          type="button"
+          class="purchase"
+          :disabled="ocupado"
+          @click="abrirInforme(nombre)"
+        >
+          <span
+            ><strong>{{ etiquetaInforme(nombre) }}</strong
+            ><small>PDF guardado</small></span
+          ><span>↗</span>
+        </button>
+        <p v-if="Capacitor.getPlatform() === 'android'" class="hint">
+          La carpeta Documentos es compartida en el teléfono: otras aplicaciones
+          con acceso a esos archivos podrían leer los informes. No se envían a
+          otro sistema automáticamente.
+        </p>
+        <p v-else class="hint">
+          Los informes incluyen datos de compras. Revisá el destino antes de
+          compartirlos.
+        </p>
+      </section>
       <section v-show="pantalla === 'respaldo'" class="card">
         <h2>Informes y respaldo</h2>
+        <button
+          type="button"
+          class="secondary spaced"
+          :disabled="ocupado"
+          @click="abrirInformes"
+        >
+          Ver informes guardados
+        </button>
         <label
           >Encabezado de PDF<input
             v-model="encabezado"
@@ -684,9 +825,9 @@ const nativo = Capacitor.isNativePlatform();
           /></label>
         </div>
         <p class="hint">
-          El respaldo incluye compras y fotos. No tiene contraseña adicional:
-          guardalo en un lugar privado. Restaurarlo reemplaza los datos
-          actuales.
+          El respaldo incluye compras y fotos, pero no los PDF guardados. No
+          tiene contraseña adicional: guardalo en un lugar privado. Restaurarlo
+          reemplaza los datos actuales.
         </p>
       </section>
       <p class="footer">

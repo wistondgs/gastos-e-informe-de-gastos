@@ -158,3 +158,124 @@ export async function pdf(compra, fotos, files, encabezado) {
   );
   return new Uint8Array(await doc.save());
 }
+
+/** Informe de compras, no liquidación: no se infieren pagos ni saldos. */
+export async function pdfGestion(
+  gestion,
+  items,
+  files,
+  encabezado,
+  incluirFotos = true,
+) {
+  if (!gestion?.id || !Array.isArray(items))
+    throw new Error("Gestión o compras inválidas.");
+  const vistos = new Set(),
+    totales = { NIO: 0, USD: 0 },
+    adjuntos = [];
+  for (const { compra, fotos } of items) {
+    if (
+      !compra ||
+      compra.gestion_id !== gestion.id ||
+      vistos.has(compra.id) ||
+      !Array.isArray(fotos)
+    )
+      throw new Error("El informe contiene una compra ajena o duplicada.");
+    vistos.add(compra.id);
+    if (
+      !Object.hasOwn(totales, compra.moneda) ||
+      !Number.isSafeInteger(compra.importe) ||
+      compra.importe <= 0
+    )
+      throw new Error("Importe o moneda inválidos en el informe.");
+    totales[compra.moneda] += compra.importe;
+    if (!Number.isSafeInteger(totales[compra.moneda]))
+      throw new Error("El total excede el límite permitido.");
+    if (fotos.some((f) => f.compra_id !== compra.id))
+      throw new Error("Un comprobante no corresponde a su compra.");
+    if (incluirFotos)
+      for (const foto of await imagenesVerificadas(fotos, files))
+        adjuntos.push({ ...foto, compra });
+  }
+  const doc = await PDFDocument.create();
+  const regular = await doc.embedFont(StandardFonts.Helvetica),
+    negrita = await doc.embedFont(StandardFonts.HelveticaBold);
+  let page = doc.addPage([595, 842]),
+    y = 790;
+  const margin = 48,
+    ancho = 499;
+  function pagina() {
+    page = doc.addPage([595, 842]);
+    y = 790;
+  }
+  function linea(texto, font = regular, size = 11) {
+    for (const fragmento of envolver(texto, font, size, ancho)) {
+      if (y < 65) pagina();
+      page.drawText(fragmento, {
+        x: margin,
+        y,
+        size,
+        font,
+        color: rgb(0.12, 0.19, 0.17),
+      });
+      y -= size + 6;
+    }
+  }
+  linea(encabezado || "Informe de gastos", negrita, 18);
+  linea("Informe de compras por gestión", negrita, 13);
+  y -= 8;
+  linea(`Gestión: ${gestion.nombre}`);
+  linea(
+    `Inicio: ${gestion.fecha_inicio} · Finalización: ${gestion.fecha_fin || "Abierta"}`,
+  );
+  linea(
+    `Generado: ${new Date().toISOString().slice(0, 19).replace("T", " ")} UTC`,
+  );
+  linea(`Compras: ${items.length}`);
+  y -= 8;
+  linea("Totales de compras", negrita, 12);
+  linea(`Córdobas: ${dinero(totales.NIO, "NIO")}`);
+  linea(`Dólares: ${dinero(totales.USD, "USD")}`);
+  linea(
+    "Este informe no calcula anticipos, pagos, créditos ni saldos.",
+    regular,
+    10,
+  );
+  y -= 10;
+  if (!items.length) linea("No hay compras registradas en esta gestión.");
+  for (const [i, { compra, fotos }] of items.entries()) {
+    if (y < 140) pagina();
+    linea(`${i + 1}. ${compra.concepto}`, negrita, 12);
+    linea(`Fecha: ${compra.fecha_compra} · Proveedor: ${compra.proveedor}`);
+    linea(
+      `Importe: ${dinero(compra.importe, compra.moneda)} · Factura: ${compra.factura || "Sin número"}`,
+    );
+    linea(`Estado: ${compra.estado} · Comprobantes: ${fotos.length}`);
+    y -= 8;
+  }
+  for (const { foto, bytes, compra } of adjuntos) {
+    pagina();
+    linea(`Comprobante de: ${compra.concepto}`, negrita, 12);
+    linea(`Tipo: ${foto.clase} · Identificador: ${foto.id}`, regular, 10);
+    const img =
+      foto.tipo === "image/png"
+        ? await doc.embedPng(bytes)
+        : await doc.embedJpg(bytes);
+    const scale = Math.min(ancho / img.width, (y - 75) / img.height, 1);
+    page.drawImage(img, {
+      x: margin,
+      y: y - img.height * scale,
+      width: img.width * scale,
+      height: img.height * scale,
+    });
+  }
+  const pages = doc.getPages();
+  pages.forEach((p, i) =>
+    p.drawText(`Página ${i + 1} de ${pages.length}`, {
+      x: margin,
+      y: 25,
+      size: 9,
+      font: regular,
+    }),
+  );
+  return new Uint8Array(await doc.save());
+}

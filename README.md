@@ -39,3 +39,5 @@ La aplicación crea un ZIP con los registros de la base, imágenes, versión de 
 Ver [ficha y evidencia de la fase](docs/fases/01-primer-recorrido.md). Errores y medidas de prevención están en `ERRORES_Y_GUARDAS.md`.
 
 La versión con gestiones migra la base local de esquema 1 a 2. La migración y la restauración de respaldos anteriores pasaron pruebas sintéticas con SQL.js, pero aún no se han probado en Android o iOS; no actualizar una instalación con datos reales hasta completar una prueba aislada y verificar su respaldo.
+
+Los informes PDF por gestión se guardan en Android en la carpeta compartida `Documentos/Registros de mis gastos` cuando el sistema permite escribir allí; puede consultarse su historial desde la app. La visibilidad, permisos y apertura real en el teléfono aún no están verificados. Los informes contienen todas las compras de la gestión sin filtro por destinatario y no calculan liquidaciones. Los respaldos ZIP de esta versión no incluyen los PDF ya generados.
