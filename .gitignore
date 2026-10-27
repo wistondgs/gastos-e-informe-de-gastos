@@ -20,3 +20,7 @@ android/build/
 ios/App/Pods/
 ios/App/build/
 .DS_Store
+
+# Contadores locales de ejecución; nunca incluir datos reales en Git.
+guardas_contadores.json
+__pycache__/
