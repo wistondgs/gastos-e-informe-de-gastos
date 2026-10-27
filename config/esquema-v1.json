@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:gastos:configuracion:v1",
+  "title": "Configuración descriptiva de ejemplo",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "ambiente", "catalogos", "informes"],
+  "properties": {
+    "version": {"const": 1},
+    "ambiente": {"enum": ["desarrollo"]},
+    "catalogos": {"type": "object", "additionalProperties": false, "required": ["categorias"], "properties": {"categorias": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "nombre", "activo"], "properties": {"id": {"type": "string", "minLength": 1}, "nombre": {"type": "string", "minLength": 1}, "activo": {"type": "boolean"}}}}}},
+    "informes": {"type": "object", "additionalProperties": false, "required": ["encabezado"], "properties": {"encabezado": {"type": "string"}}}
+  }
+}
