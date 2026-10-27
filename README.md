@@ -1,6 +1,6 @@
 # Mis gastos · primer recorrido
 
-Aplicación móvil independiente para registrar compras y comprobantes sin servidor. Esta fase implementa captura manual, SQLite, fotos, Excel, PDF y respaldo; **todavía no está validada en teléfono** y no es una beta certificada. No conecta con ERP.
+Aplicación móvil independiente para registrar compras y comprobantes sin servidor. El recorrido implementado incluye gestiones con fecha de apertura y finalización, captura guiada de compras, SQLite, fotos, Excel, PDF y respaldo; **todavía no está validada en teléfono** y no es una beta certificada. Los fondos, adelantos, reembolsos y créditos comerciales aún no están implementados. No conecta con ERP.
 
 ## Desarrollo
 
@@ -37,3 +37,5 @@ El APK de prueba se genera en `android/app/build/outputs/apk/debug/app-debug.apk
 La aplicación crea un ZIP con los registros de la base, imágenes, versión de esquema y huellas SHA-256. Restaurar valida antes de reemplazar datos y usa una transacción para los registros. El archivo compartido **no está cifrado ni autenticado con contraseña**: elegir un destino privado y verificar la restauración en un dispositivo antes de confiarle datos reales. La copia de pruebas no garantiza conservación ante daños del teléfono, apagones o cambios de plataforma. La recuperación entre dispositivos y cualquier cifrado adicional requieren una decisión posterior.
 
 Ver [ficha y evidencia de la fase](docs/fases/01-primer-recorrido.md). Errores y medidas de prevención están en `ERRORES_Y_GUARDAS.md`.
+
+La versión con gestiones migra la base local de esquema 1 a 2. La migración y la restauración de respaldos anteriores pasaron pruebas sintéticas con SQL.js, pero aún no se han probado en Android o iOS; no actualizar una instalación con datos reales hasta completar una prueba aislada y verificar su respaldo.

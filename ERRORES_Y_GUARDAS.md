@@ -44,6 +44,17 @@
 
 ---
 
+## E-03 · Se preguntó por préstamos sin aplicar primero los casos ya documentados
+**Clase:** criterio · **Veces que saltó:** 1 · Se plantearon préstamos personales genéricos en lugar de adelanto propio y crédito comercial.
+**2026-10-27, conversación de fluidez (error de Codex).** Se preguntó si registrar préstamos hechos o recibidos sin partir de los escenarios del plan 02 y A3/A4 del roadmap 03; el propietario precisó que hablaba de aportar dinero propio para una compra y del crédito de la casa comercial.
+**Por qué.** Se formuló una pregunta amplia antes de contrastar el vocabulario del usuario con los casos y límites ya escritos.
+**Severidad.** Claridad y alcance: puede inducir una función fuera de la beta y retrasar la implementación correcta. No se crearon movimientos ni se alteraron saldos.
+**Firma (cómo se detecta).** Una pregunta de negocio ofrece alternativas genéricas sin mencionar el ejemplo o la sección que ya resuelve el caso.
+**Guarda** `[PREGUNTA → punto 0]`: antes de consultar una regla de negocio, identificar lo que dicen el plan, roadmap y ejemplos y formular solo la duda restante.
+**Aplicada en:** `PLANTILLA_FASE.md`, punto 0; su consulta es obligatoria al iniciar o retomar una fase según `AGENTS.md`.
+
+---
+
 ## Ejes no vigilados (agujeros declarados)
 
 *Un registro sin eventos pero con ejes no vigilados no es un certificado de salud: es un certificado con agujeros declarados.*

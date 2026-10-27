@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from "vue";
+import { ref, computed, onMounted } from "vue";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Capacitor } from "@capacitor/core";
 import { abrirRepositorio } from "../datos/abrir.js";
@@ -16,6 +16,12 @@ import { excel, pdf } from "../exportaciones/informes.js";
 import { crearRespaldo, restaurarRespaldo } from "../datos/respaldo.js";
 const repo = ref(null),
   compras = ref([]),
+  filtroGestion = ref(null),
+  gestiones = ref([]),
+  nombreGestion = ref(""),
+  inicioGestion = ref(""),
+  cierreId = ref(null),
+  fechaCierre = ref(""),
   seleccion = ref(null),
   fotos = ref([]),
   vistas = ref([]),
@@ -23,7 +29,28 @@ const repo = ref(null),
   error = ref(""),
   mensaje = ref(""),
   ocupado = ref(false),
-  encabezado = ref("Informe de gastos");
+  encabezado = ref("Informe de gastos"),
+  pantalla = ref("inicio"),
+  paso = ref(1);
+function ir(destino) {
+  pantalla.value = destino;
+  error.value = "";
+  mensaje.value = "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+const comprasVisibles = computed(() =>
+  filtroGestion.value
+    ? compras.value.filter((c) => c.gestion_id === filtroGestion.value)
+    : compras.value,
+);
+function verCompras(id) {
+  filtroGestion.value = id;
+  ir("compras");
+}
+function todasLasCompras() {
+  filtroGestion.value = null;
+  ir("compras");
+}
 const hoy = () => {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -38,6 +65,7 @@ const nuevo = () => ({
   moneda: "NIO",
   factura: "",
   estado: "pendiente",
+  gestion_id: "",
 });
 const form = ref(nuevo());
 async function operacion(fn) {
@@ -55,6 +83,8 @@ async function operacion(fn) {
 }
 async function cargar() {
   compras.value = await repo.value.compras();
+  gestiones.value = await repo.value.gestiones();
+  if (!inicioGestion.value) inicioGestion.value = hoy();
   encabezado.value = await repo.value.ajuste();
   if (seleccion.value) {
     seleccion.value =
@@ -98,14 +128,82 @@ async function camara() {
     await agregar(base64ABytes(base64));
   });
 }
+async function iniciarGestion() {
+  await operacion(async () => {
+    const g = {
+      id: crypto.randomUUID(),
+      nombre: nombreGestion.value.trim(),
+      fecha_inicio: inicioGestion.value,
+      fecha_fin: null,
+    };
+    await repo.value.crearGestion(g);
+    await cargar();
+    nombreGestion.value = "";
+    inicioGestion.value = hoy();
+    form.value.gestion_id = g.id;
+    pantalla.value = "registro";
+    paso.value = 1;
+    mensaje.value = "Gestión iniciada. Podés registrar la primera compra.";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+async function terminarGestion() {
+  await operacion(async () => {
+    await repo.value.cerrarGestion(cierreId.value, fechaCierre.value);
+    cierreId.value = null;
+    await cargar();
+    mensaje.value = "Gestión terminada. Sus compras siguen disponibles.";
+  });
+}
+function elegirGestion(id) {
+  form.value.gestion_id = id;
+  ir("registro");
+}
+function avanzar() {
+  error.value = "";
+  if (
+    paso.value === 1 &&
+    (!form.value.gestion_id || !form.value.concepto.trim())
+  ) {
+    error.value = "Elegí la gestión e indicá qué compraste.";
+    return;
+  }
+  if (paso.value === 2) {
+    try {
+      centavos(form.value.monto);
+    } catch (e) {
+      error.value = e.message;
+      return;
+    }
+  }
+  if (
+    paso.value === 3 &&
+    (!form.value.fecha_compra || !form.value.proveedor.trim())
+  ) {
+    error.value = "Completá la fecha y el proveedor.";
+    return;
+  }
+  paso.value = Math.min(4, paso.value + 1);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function retroceder() {
+  error.value = "";
+  paso.value = Math.max(1, paso.value - 1);
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 async function guardar() {
   await operacion(async () => {
     const c = { ...form.value, importe: centavos(form.value.monto) };
     delete c.monto;
     const creada = await guardarCompra(repo.value, archivos, c, imagenes.value);
+    const gestionActiva = form.value.gestion_id;
     form.value = nuevo();
+    form.value.gestion_id = gestionActiva;
+    paso.value = 1;
     imagenes.value = [];
     await cargar();
+    pantalla.value = "compras";
+    window.scrollTo({ top: 0, behavior: "smooth" });
     mensaje.value = creada
       ? "Compra guardada en el dispositivo."
       : "Esta compra ya estaba guardada.";
@@ -114,6 +212,8 @@ async function guardar() {
 async function ver(c) {
   await operacion(async () => {
     seleccion.value = c;
+    pantalla.value = "detalle";
+    window.scrollTo({ top: 0, behavior: "smooth" });
     fotos.value = await repo.value.fotos(c.id);
     vistas.value = [];
     for (const foto of fotos.value) {
@@ -195,102 +295,306 @@ const nativo = Capacitor.isNativePlatform();
     <main class="wrap main">
       <p v-if="error" class="alert error" role="alert">{{ error }}</p>
       <p v-if="mensaje" class="alert success" role="status">{{ mensaje }}</p>
-      <section class="card" aria-labelledby="registro">
+      <section v-show="pantalla === 'inicio'" class="welcome">
+        <div class="welcome-copy">
+          <span class="section-kicker">TU ESPACIO</span>
+          <h2>Tu día, más claro.</h2>
+          <p>
+            Registrá una compra o revisá tus comprobantes cuando lo necesités.
+          </p>
+        </div>
+        <button
+          class="primary welcome-button"
+          type="button"
+          @click="ir('gestiones')"
+        >
+          <span class="plus">＋</span> Iniciar gestión
+        </button>
+        <div class="quick-links">
+          <button type="button" @click="todasLasCompras()">
+            <span>▤</span><strong>Mis compras</strong
+            ><small
+              >{{ compras.length }}
+              {{ compras.length === 1 ? "registro" : "registros" }}</small
+            ></button
+          ><button type="button" @click="ir('respaldo')">
+            <span>↥</span><strong>Informes y respaldo</strong
+            ><small>Configuración y copias</small>
+          </button>
+        </div>
+        <p class="hint notice">
+          Esta versión registra compras y comprobantes. Los fondos, anticipos y
+          créditos todavía están pendientes.
+        </p>
+      </section>
+      <section v-show="pantalla === 'gestiones'" class="card gestion-screen">
+        <span class="section-kicker">ORGANIZÁ TU JORNADA</span>
+        <h2>Mis gestiones</h2>
+        <p class="hint">
+          Abrí una gestión para reunir las compras de un viaje, encargo o
+          jornada.
+        </p>
+        <form @submit.prevent="iniciarGestion" class="step-fields gestion-form">
+          <label
+            >Nombre de la gestión<input
+              v-model.trim="nombreGestion"
+              maxlength="120"
+              placeholder="Ej. Winston Managua"
+              required /></label
+          ><label
+            >Fecha de inicio<input
+              v-model="inicioGestion"
+              type="date"
+              required /></label
+          ><button type="submit" class="primary" :disabled="ocupado || !repo">
+            Iniciar gestión
+          </button>
+        </form>
+        <div class="gestion-list">
+          <h3>Gestiones guardadas</h3>
+          <p v-if="!gestiones.length" class="hint">
+            Todavía no hay gestiones. Creá la primera para empezar.
+          </p>
+          <article v-for="g in gestiones" :key="g.id" class="gestion-item">
+            <div>
+              <strong>{{ g.nombre }}</strong>
+              <p class="hint">
+                Inicio: {{ g.fecha_inicio }}
+                <span v-if="g.fecha_fin">· Terminó: {{ g.fecha_fin }}</span
+                ><span v-else> · Abierta</span>
+              </p>
+            </div>
+            <div class="button-row">
+              <button
+                type="button"
+                class="text-control"
+                @click="verCompras(g.id)"
+              >
+                Ver compras
+              </button>
+            </div>
+            <div v-if="!g.fecha_fin" class="button-row">
+              <button
+                type="button"
+                class="secondary"
+                @click="elegirGestion(g.id)"
+              >
+                Registrar compra</button
+              ><button
+                type="button"
+                class="text-control"
+                @click="
+                  cierreId = g.id;
+                  fechaCierre = hoy();
+                "
+              >
+                Terminar gestión
+              </button>
+            </div>
+            <form
+              v-if="cierreId === g.id"
+              @submit.prevent="terminarGestion"
+              class="close-form"
+            >
+              <label
+                >Fecha de finalización<input
+                  v-model="fechaCierre"
+                  type="date"
+                  :min="g.fecha_inicio"
+                  required
+              /></label>
+              <div class="button-row">
+                <button type="submit" class="secondary" :disabled="ocupado">
+                  Confirmar finalización</button
+                ><button
+                  type="button"
+                  class="text-control"
+                  @click="cierreId = null"
+                >
+                  Cancelar
+                </button>
+              </div>
+              <p class="hint">
+                Las compras permanecen disponibles después de terminar. Esta
+                versión todavía no calcula los saldos de la gestión.
+              </p>
+            </form>
+          </article>
+        </div>
+      </section>
+      <section
+        v-show="pantalla === 'registro'"
+        class="card"
+        aria-labelledby="registro"
+      >
         <h2 id="registro">Registrar compra</h2>
         <p class="hint">
           Completá los datos y agregá los comprobantes que tengas.
         </p>
+        <div class="steps" aria-label="Progreso de la compra">
+          <span :class="{ current: paso === 1 }">1 · Compra</span
+          ><span :class="{ current: paso === 2 }">2 · Importe</span
+          ><span :class="{ current: paso === 3 }">3 · Datos</span
+          ><span :class="{ current: paso === 4 }">4 · Foto</span>
+        </div>
         <form @submit.prevent="guardar">
-          <div class="grid">
+          <div v-if="paso === 1" class="step-fields">
             <label
-              >Fecha de compra<input
-                v-model="form.fecha_compra"
-                type="date"
-                required
-            /></label>
+              >Gestión<select v-model="form.gestion_id" required>
+                <option value="">Elegí una gestión</option>
+                <option
+                  v-for="g in gestiones.filter((item) => !item.fecha_fin)"
+                  :key="g.id"
+                  :value="g.id"
+                >
+                  {{ g.nombre }} · {{ g.fecha_inicio }}
+                </option>
+              </select></label
+            >
+            <p v-if="!gestiones.some((g) => !g.fecha_fin)" class="hint">
+              Primero iniciá una gestión.
+              <button
+                type="button"
+                class="inline-link"
+                @click="ir('gestiones')"
+              >
+                Iniciar gestión
+              </button>
+            </p>
             <label
-              >Proveedor<input
-                v-model.trim="form.proveedor"
-                maxlength="250"
-                required
-            /></label>
-            <label class="wide"
-              >Concepto<input
+              >¿Qué compraste?<input
                 v-model.trim="form.concepto"
                 maxlength="250"
                 required
+                placeholder="Ej. Materiales para la finca"
             /></label>
+          </div>
+          <div v-if="paso === 2" class="step-fields">
             <label
-              >Importe<input
+              >¿Cuánto costó?<input
                 v-model="form.monto"
                 inputmode="decimal"
                 placeholder="0.00"
-                required
-            /></label>
-            <label
+                required /></label
+            ><label
               >Moneda<select v-model="form.moneda">
                 <option value="NIO">Córdobas (C$)</option>
                 <option value="USD">Dólares (US$)</option>
               </select></label
             >
+          </div>
+          <div v-if="paso === 3" class="step-fields">
+            <label
+              >¿Dónde compraste?<input
+                v-model.trim="form.proveedor"
+                maxlength="250"
+                required
+                placeholder="Nombre del proveedor" /></label
+            ><label
+              >Fecha de compra<input
+                v-model="form.fecha_compra"
+                type="date"
+                required
+            /></label>
+          </div>
+          <div v-if="paso === 4" class="step-fields">
             <label
               >Número de factura <small>(opcional)</small
-              ><input v-model="form.factura" maxlength="100"
-            /></label>
-            <label
+              ><input
+                v-model="form.factura"
+                maxlength="100"
+                placeholder="Conservá los ceros iniciales" /></label
+            ><label
               >Estado del comprobante<select v-model="form.estado">
                 <option value="factura">Con factura</option>
                 <option value="sin_factura">Sin factura</option>
                 <option value="pendiente">Comprobante pendiente</option>
               </select></label
             >
+            <div>
+              <strong>Fotos del comprobante</strong>
+              <p class="hint">
+                Podés agregar varias imágenes o continuar sin ellas.
+              </p>
+              <div class="photo-actions">
+                <button
+                  v-if="nativo"
+                  type="button"
+                  class="secondary"
+                  :disabled="ocupado"
+                  @click="camara"
+                >
+                  Tomar foto</button
+                ><label class="file-button"
+                  >Elegir imágenes<input
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    multiple
+                    :disabled="ocupado"
+                    @change="adjuntar"
+                /></label>
+              </div>
+            </div>
+            <div v-for="(imagen, i) in imagenes" :key="i" class="photo-row">
+              <span>Imagen {{ i + 1 }}</span
+              ><label
+                >Tipo<select v-model="imagen.clase">
+                  <option value="factura">Factura</option>
+                  <option value="voucher">Voucher</option>
+                  <option value="otro">Otro</option>
+                </select></label
+              ><button
+                type="button"
+                class="link"
+                @click="imagenes.splice(i, 1)"
+              >
+                Quitar
+              </button>
+            </div>
           </div>
-          <div class="photo-actions">
+          <div class="step-actions">
             <button
-              v-if="nativo"
-              type="button"
+              v-if="paso > 1"
               class="secondary"
-              :disabled="ocupado"
-              @click="camara"
+              type="button"
+              @click="retroceder"
             >
-              Tomar foto</button
-            ><label class="file-button"
-              >Elegir imágenes<input
-                type="file"
-                accept="image/jpeg,image/png"
-                multiple
-                :disabled="ocupado"
-                @change="adjuntar"
-            /></label>
-          </div>
-          <p class="hint">
-            Las imágenes se copian al almacenamiento de la aplicación. JPEG o
-            PNG, hasta 15 MB cada una.
-          </p>
-          <div v-for="(imagen, i) in imagenes" :key="i" class="photo-row">
-            <span>Imagen {{ i + 1 }}</span
-            ><label
-              >Tipo<select v-model="imagen.clase">
-                <option value="factura">Factura</option>
-                <option value="voucher">Voucher</option>
-                <option value="otro">Otro</option>
-              </select></label
-            ><button type="button" class="link" @click="imagenes.splice(i, 1)">
-              Quitar
+              ← Atrás</button
+            ><button
+              v-if="paso < 4"
+              class="primary"
+              type="button"
+              @click="avanzar"
+            >
+              Continuar →</button
+            ><button
+              v-else
+              class="primary"
+              type="submit"
+              :disabled="ocupado || !repo"
+            >
+              Guardar compra
             </button>
           </div>
-          <button class="primary" type="submit" :disabled="ocupado || !repo">
-            Guardar compra
-          </button>
         </form>
       </section>
-      <section class="card">
+      <section v-show="pantalla === 'compras'" class="card">
         <h2>Compras guardadas</h2>
-        <p v-if="!compras.length" class="hint">
+        <p v-if="filtroGestion" class="hint">
+          Gestión: {{ gestiones.find((g) => g.id === filtroGestion)?.nombre }} ·
+          <button
+            class="inline-link"
+            type="button"
+            @click="filtroGestion = null"
+          >
+            Ver todas
+          </button>
+        </p>
+        <p v-if="!comprasVisibles.length" class="hint">
           Todavía no hay compras registradas.
         </p>
         <button
-          v-for="c in compras"
+          v-for="c in comprasVisibles"
           :key="c.id"
           class="purchase"
           type="button"
@@ -298,11 +602,20 @@ const nativo = Capacitor.isNativePlatform();
         >
           <span
             ><strong>{{ c.concepto }}</strong
-            ><small>{{ c.proveedor }} · {{ c.fecha_compra }}</small></span
+            ><small
+              >{{ c.proveedor }} · {{ c.fecha_compra }} ·
+              {{
+                gestiones.find((g) => g.id === c.gestion_id)?.nombre ||
+                "Sin gestión"
+              }}</small
+            ></span
           ><strong>{{ dinero(c.importe, c.moneda) }}</strong>
         </button>
       </section>
-      <section v-if="seleccion" class="card">
+      <section v-if="seleccion && pantalla === 'detalle'" class="card">
+        <button class="back-link" type="button" @click="todasLasCompras()">
+          ← Volver a mis compras
+        </button>
         <h2>Detalle de compra</h2>
         <p>
           <strong>{{ seleccion.concepto }}</strong> ·
@@ -342,7 +655,7 @@ const nativo = Capacitor.isNativePlatform();
           </button>
         </div>
       </section>
-      <section class="card">
+      <section v-show="pantalla === 'respaldo'" class="card">
         <h2>Informes y respaldo</h2>
         <label
           >Encabezado de PDF<input
@@ -381,9 +694,246 @@ const nativo = Capacitor.isNativePlatform();
         sincroniza información.
       </p>
     </main>
+    <nav class="bottom-nav" aria-label="Navegación principal">
+      <button
+        type="button"
+        :class="{ active: pantalla === 'inicio' }"
+        :aria-current="pantalla === 'inicio' ? 'page' : undefined"
+        @click="ir('inicio')"
+      >
+        <span aria-hidden="true">⌂</span>Inicio
+      </button>
+      <button
+        type="button"
+        :class="{ active: pantalla === 'gestiones' }"
+        :aria-current="pantalla === 'gestiones' ? 'page' : undefined"
+        @click="ir('gestiones')"
+      >
+        <span aria-hidden="true">▧</span>Gestiones
+      </button>
+      <button
+        type="button"
+        :class="{ active: pantalla === 'registro' }"
+        :aria-current="pantalla === 'registro' ? 'page' : undefined"
+        @click="ir('registro')"
+      >
+        <span aria-hidden="true">＋</span>Registrar
+      </button>
+      <button
+        type="button"
+        :class="{ active: pantalla === 'compras' || pantalla === 'detalle' }"
+        :aria-current="
+          pantalla === 'compras' || pantalla === 'detalle' ? 'page' : undefined
+        "
+        @click="todasLasCompras()"
+      >
+        <span aria-hidden="true">▤</span>Compras
+      </button>
+      <button
+        type="button"
+        :class="{ active: pantalla === 'respaldo' }"
+        :aria-current="pantalla === 'respaldo' ? 'page' : undefined"
+        @click="ir('respaldo')"
+      >
+        <span aria-hidden="true">↥</span>Respaldo
+      </button>
+    </nav>
   </div>
 </template>
 <style scoped>
+.gestion-form {
+  margin-top: 20px;
+}
+.gestion-form .primary {
+  margin-top: 0;
+}
+.gestion-list {
+  border-top: 1px solid #e1ebe4;
+  margin-top: 26px;
+  padding-top: 22px;
+}
+.gestion-list h3 {
+  font-size: 16px;
+  margin: 0 0 10px;
+}
+.gestion-item {
+  border: 1px solid #e1ebe4;
+  border-radius: 13px;
+  padding: 16px;
+  margin-top: 10px;
+}
+.gestion-item .hint {
+  margin-bottom: 0;
+}
+.close-form {
+  border-top: 1px solid #e1ebe4;
+  margin-top: 16px;
+  padding-top: 16px;
+}
+.text-control,
+.inline-link {
+  border: 0;
+  background: none;
+  color: #286e58;
+  font-weight: 700;
+  padding: 8px;
+}
+.inline-link {
+  padding: 0;
+  text-decoration: underline;
+}
+.steps {
+  display: flex;
+  gap: 7px;
+  margin: 20px 0 24px;
+}
+.steps span {
+  flex: 1;
+  color: #80988a;
+  background: #f4f8f4;
+  text-align: center;
+  border-radius: 9px;
+  padding: 10px 4px;
+  font-size: 11px;
+  font-weight: 700;
+}
+.steps span.current {
+  color: #185c4c;
+  background: #dff0d9;
+}
+.step-fields {
+  display: grid;
+  gap: 19px;
+}
+.step-fields label {
+  gap: 8px;
+}
+.step-fields input,
+.step-fields select {
+  min-height: 50px;
+}
+.step-actions {
+  display: flex;
+  gap: 10px;
+  align-items: stretch;
+  margin-top: 22px;
+}
+.step-actions .primary {
+  margin: 0;
+  flex: 1;
+}
+.step-actions .secondary {
+  min-width: 95px;
+}
+.welcome {
+  background: #fff;
+  border: 1px solid #e0eae4;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 8px 28px #173d2c0d;
+}
+.welcome-copy h2 {
+  font-size: 26px;
+  line-height: 1.2;
+  margin: 8px 0;
+  font-weight: 750;
+  letter-spacing: -0.5px;
+}
+.welcome-copy p {
+  color: #637e71;
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0 0 20px;
+}
+.section-kicker {
+  color: #6e8e7c;
+  font-size: 10px;
+  letter-spacing: 1.4px;
+  font-weight: 800;
+}
+.welcome-button {
+  margin: 4px 0 16px;
+  padding: 17px;
+  font-size: 16px;
+}
+.plus {
+  font-size: 22px;
+  margin-right: 7px;
+}
+.quick-links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.quick-links button {
+  text-align: left;
+  border: 1px solid #dfebe2;
+  border-radius: 13px;
+  padding: 15px;
+  background: #f7faf7;
+  color: #244b3d;
+}
+.quick-links span,
+.quick-links strong,
+.quick-links small {
+  display: block;
+}
+.quick-links span {
+  font-size: 25px;
+  color: #54866d;
+  margin-bottom: 8px;
+}
+.quick-links strong {
+  font-size: 14px;
+}
+.quick-links small {
+  font-size: 11px;
+  color: #7d9487;
+  margin-top: 5px;
+}
+.notice {
+  margin: 18px 0 0;
+}
+.back-link {
+  border: 0;
+  background: none;
+  color: #286e58;
+  font-weight: 700;
+  padding: 0 0 18px;
+}
+.bottom-nav {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-top: 1px solid #dce8df;
+  display: flex;
+  justify-content: center;
+  z-index: 5;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  box-shadow: 0 -4px 18px #173d2c08;
+}
+.bottom-nav button {
+  flex: 1;
+  max-width: 180px;
+  border: 0;
+  background: none;
+  color: #718c7e;
+  font-size: 11px;
+  font-weight: 700;
+  min-height: 54px;
+  border-radius: 10px;
+}
+.bottom-nav button span {
+  display: block;
+  font-size: 23px;
+  line-height: 26px;
+}
+.bottom-nav button.active {
+  color: #185c4c;
+  background: #eef7ee;
+}
 .app-shell {
   min-height: 100vh;
   background: #f3f7f3;
@@ -413,7 +963,7 @@ const nativo = Capacitor.isNativePlatform();
   font-weight: 700;
 }
 .main {
-  padding: 0 16px 32px;
+  padding: 0 16px calc(110px + env(safe-area-inset-bottom));
   margin-top: -35px;
 }
 .card {

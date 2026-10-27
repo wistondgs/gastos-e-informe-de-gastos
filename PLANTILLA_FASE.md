@@ -4,6 +4,7 @@
 
 - Entradas revisadas de `ERRORES_Y_GUARDAS.md`:
 - Las que aplican y cómo se cumple cada guarda:
+- Antes de consultar una regla de negocio, ¿qué dicen el plan, el roadmap y sus ejemplos? Indicar la sección o explicar la duda restante:
 - Si ninguna aplica, justificarlo:
 - Resultado de los mutantes de las guardas y dónde quedó la evidencia:
 

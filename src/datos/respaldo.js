@@ -1,6 +1,7 @@
 import JSZip from "jszip";
 import { huella } from "./archivos.js";
 import { validarCompra } from "../dominio/compra.js";
+import { validarGestion } from "../dominio/gestion.js";
 import { verificarImagen } from "../dominio/operaciones.js";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -9,7 +10,13 @@ export async function crearRespaldo(repo, files) {
   const compras = await repo.compras();
   const fotos = [];
   for (const c of compras) fotos.push(...(await repo.fotos(c.id)));
-  const datos = { version: 1, compras, fotos, encabezado: await repo.ajuste() };
+  const datos = {
+    version: 2,
+    compras,
+    fotos,
+    gestiones: await repo.gestiones(),
+    encabezado: await repo.ajuste(),
+  };
   const zip = new JSZip();
   const json = encoder.encode(JSON.stringify(datos));
   zip.file("datos.json", json);
@@ -71,7 +78,8 @@ export async function restaurarRespaldo(repo, files, bytes) {
   }
   if (
     man.version !== 1 ||
-    datos.version !== 1 ||
+    ![1, 2].includes(datos.version) ||
+    (datos.version === 2 && !Array.isArray(datos.gestiones)) ||
     !Array.isArray(datos.compras) ||
     !Array.isArray(datos.fotos) ||
     typeof datos.encabezado !== "string" ||
@@ -80,9 +88,19 @@ export async function restaurarRespaldo(repo, files, bytes) {
     typeof man.archivos !== "object"
   )
     throw new Error("Versión o estructura de respaldo inválida.");
+  const gestiones = datos.version === 1 ? [] : datos.gestiones;
+  const gestionIds = new Set();
+  for (const g of gestiones) {
+    validarGestion(g);
+    if (gestionIds.has(g.id))
+      throw new Error("Gestión duplicada en el respaldo.");
+    gestionIds.add(g.id);
+  }
   const ids = new Set();
   for (const c of datos.compras) {
     validarCompra(c);
+    if (c.gestion_id != null && !gestionIds.has(c.gestion_id))
+      throw new Error("La compra referencia una gestión ausente.");
     if (ids.has(c.id)) throw new Error("Compra duplicada en el respaldo.");
     ids.add(c.id);
   }
@@ -125,7 +143,7 @@ export async function restaurarRespaldo(repo, files, bytes) {
       await files.escribir(ruta, contenido);
       staging.push({ ...foto, ruta });
     }
-    await repo.reemplazar(datos.compras, staging, datos.encabezado);
+    await repo.reemplazar(datos.compras, staging, datos.encabezado, gestiones);
   } catch (error) {
     await Promise.all(staging.map((f) => files.borrar(f.ruta).catch(() => {})));
     throw new Error(`No se restauró el respaldo: ${error.message}`);

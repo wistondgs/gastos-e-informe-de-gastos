@@ -21,3 +21,10 @@ Para cada obligación hay que identificar acreedor, deudor, beneficiario del sal
 5. Ejecutar cada caso desde la perspectiva de las partes pertinentes y en ambas monedas por separado, sin crear saldos a favor o en contra de quien no sea parte de la obligación.
 
 Si se pretende incorporar un préstamo personal independiente o si el tratamiento de un préstamo vinculado a una gestión no está definido por el mandato de esa fase, consultar al propietario antes de implementar o calcular esa obligación.
+
+## Aclaración del propietario: los dos casos que llama «préstamo»
+
+- **Adelanto propio en una gestión:** se reciben C$100,000 para comprar un producto de C$103,000 y quien hace el encargo aporta C$3,000 de su dinero. Los C$3,000 efectivamente aportados y reconocidos quedan por reembolsar a esa persona. No se transforma el anticipo recibido en una ganancia ni en un préstamo independiente.
+- **Crédito de una casa comercial:** la casa comercial financia una compra al cliente identificado. La obligación pendiente corresponde a ese deudor frente a la casa comercial; debe reflejar sus pagos y saldo sin crear otra compra ni una cuenta por cobrar personal automática.
+
+Estos son los casos del plan 02 y las pruebas A3 y A4 del roadmap 03. La palabra «préstamo» en la conversación debe entenderse en ese contexto; no introduce por sí sola préstamos personales independientes fuera del alcance de la beta.
