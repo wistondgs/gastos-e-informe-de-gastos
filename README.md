@@ -16,7 +16,7 @@ El desarrollo JavaScript usa `node_modules` en esta carpeta, aislado por proyect
 
 ## Android
 
-El proyecto nativo está en `android/`; `npm run android:sync` actualiza sus recursos. Se requiere JDK 21, SDK Android plataforma 35 y build-tools 35.0.0. Las herramientas descargadas para este equipo están en `~/.local/share/gastos-entorno/`; para usarlas, definir `JAVA_HOME="$HOME/.local/share/gastos-entorno/jdk21"` y `ANDROID_HOME="$HOME/.local/share/gastos-entorno/android-sdk"`. El SDK aún necesita licencia y paquetes. Compilar con `cd android && ./gradlew assembleDebug`. El resultado debug es para pruebas y no constituye una firma de distribución. No se ha verificado instalación en un teléfono.
+El proyecto nativo está en `android/`; `npm run android:sync` actualiza sus recursos. Se requiere JDK 21, SDK Android plataforma 35 y build-tools 35.0.0. Las herramientas descargadas para este equipo están en `~/.local/share/gastos-entorno/`; para usarlas, definir `JAVA_HOME="$HOME/.local/share/gastos-entorno/jdk21"` y `ANDROID_HOME="$HOME/.local/share/gastos-entorno/android-sdk"`. La plataforma 35 y las herramientas de compilación 34 y 35 están instaladas; la licencia fue aceptada por el propietario. Compilar con `cd android && ./gradlew assembleDebug`. El resultado debug es para pruebas y no constituye una firma de distribución. Se generó `android/app/build/outputs/apk/debug/app-debug.apk` y se verificó su firma de desarrollo. No se ha verificado instalación en un teléfono.
 
 ## iOS
 

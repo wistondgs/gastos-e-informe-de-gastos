@@ -15,10 +15,10 @@ Plugins instalados y fijados: SQLite 7.0.3, cámara 7.0.5, archivos 7.1.9 y comp
 - Instalación `npm install`: verificada; dependencias propias en `node_modules`, lockfile generado.
 - `npm run check`: verificado: lint, formato, compilación de componente y build web.
 - `npx cap add android`, `npx cap add ios` y `npm run android:sync`: verificados. iOS se generó sin ejecutar CocoaPods ni Xcode.
-- Temurin Java 21.0.13 y herramientas Android de línea de comandos descargados en `~/.local/share/gastos-entorno`. El archivo de herramientas de Google se verificó con SHA-256 `4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583`, publicado por Google. El SHA-256 del JDK coincide con los metadatos oficiales de Adoptium. Gradle 8.11.1 ejecutó `--version` con ese JDK. SDK Android 35: pendiente de aceptación de la licencia y descarga.
-- Android: compilación APK, instalación, teléfono real y firma de distribución pendientes. No se identificó teléfono conectado mediante USB al inicio.
+- Temurin Java 21.0.13 y herramientas Android de línea de comandos descargados en `~/.local/share/gastos-entorno`. El archivo de herramientas de Google se verificó con SHA-256 `4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583`, publicado por Google. El SHA-256 del JDK coincide con los metadatos oficiales de Adoptium. Gradle 8.11.1 ejecutó `--version` con ese JDK. Licencia Android aceptada por el propietario; instalados plataforma 35 (revisión 2), platform-tools 37.0.1 y build-tools 35.0.0 y 34.0.0.
+- Android: `./gradlew assembleDebug --no-daemon` compiló correctamente el APK de prueba `android/app/build/outputs/apk/debug/app-debug.apk` (27 MB; SHA-256 049af79440fafb65e1ea817aa0645c8ae27f3ad294f283e8b7cc913a7145b696). `apksigner verify` verificó firma v1 y v2 de desarrollo; advirtió entradas META-INF sin protección v1. Gradle informó advertencias del complemento Filesystem y conservó sin strip la biblioteca libsqlcipher.so. `adb devices` no encontró dispositivo: instalación y prueba real no ejecutadas. Firma de distribución pendiente.
 - iOS: compilación, firma, instalación y dispositivo real no verificados. Se necesita acceso a macOS, Xcode, dependencias nativas y destino autorizado. No hay ruta de distribución ni servicio remoto confirmados.
-- Reproducción desde checkout limpio: verificada con `git archive HEAD`, `npm ci` y `npm run check`; no incluye compilación Android ni iOS.
+- Reproducción desde checkout limpio: verificada con `git archive HEAD`, `npm ci` y `npm run check`; incluye `cap sync android` y `./gradlew :app:assembleDebug` con el SDK y caché locales; no incluye iOS.
 - Remote y CI: no hay repositorio remoto autorizado ni servicio de CI ejecutado.
 
 ## Referencias ERP
