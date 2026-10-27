@@ -1,10 +1,10 @@
-# Entorno de desarrollo: gastos móvil
+# Mis gastos · primer recorrido
 
-Repositorio independiente para preparar una aplicación Android/iOS con Vue 3, Quasar y Capacitor 7, siguiendo el ecosistema móvil de ERP V2/V3. Contiene una pantalla vacía: no es una beta funcional ni conecta al ERP. El prototipo anterior permanece en `../gastos-movil` y no forma parte de este repositorio.
+Aplicación móvil independiente para registrar compras y comprobantes sin servidor. Esta fase implementa captura manual, SQLite, fotos, Excel, PDF y respaldo; **todavía no está validada en teléfono** y no es una beta certificada. No conecta con ERP.
 
-## Requisitos y arranque
+## Desarrollo
 
-Node 22 a 24 y npm. Las versiones directas están fijadas en `package.json` y sus dependencias en `package-lock.json`.
+Requiere Node 22–24 y npm:
 
 ```sh
 npm ci
@@ -12,18 +12,28 @@ npm run check
 npm run dev
 ```
 
-El desarrollo JavaScript usa `node_modules` en esta carpeta, aislado por proyecto; un `venv` de Python no es necesario para esta tecnología. `npm run check` ejecuta análisis estático, formato, prueba de compilación de la pantalla inicial y compilación web.
+En Android/iOS se usa el plugin nativo SQLite y archivos privados. La vista de navegador para desarrollo usa SQLite mediante SQL.js y almacenamiento del navegador, con sus límites de espacio y aislamiento; no reemplaza la prueba móvil.
 
 ## Android
 
-El proyecto nativo está en `android/`; `npm run android:sync` actualiza sus recursos. Se requiere JDK 21, SDK Android plataforma 35 y build-tools 35.0.0. Las herramientas descargadas para este equipo están en `~/.local/share/gastos-entorno/`; para usarlas, definir `JAVA_HOME="$HOME/.local/share/gastos-entorno/jdk21"` y `ANDROID_HOME="$HOME/.local/share/gastos-entorno/android-sdk"`. La plataforma 35 y las herramientas de compilación 34 y 35 están instaladas; la licencia fue aceptada por el propietario. Compilar con `cd android && ./gradlew assembleDebug`. El resultado debug es para pruebas y no constituye una firma de distribución. Se generó `android/app/build/outputs/apk/debug/app-debug.apk` y se verificó su firma de desarrollo. No se ha verificado instalación en un teléfono.
+Con JDK 21 y SDK Android instalados:
+
+```sh
+export JAVA_HOME="$HOME/.local/share/gastos-entorno/jdk21"
+export ANDROID_HOME="$HOME/.local/share/gastos-entorno/android-sdk"
+export PATH="$JAVA_HOME/bin:$ANDROID_HOME/platform-tools:$PATH"
+npm run android:sync
+(cd android && ./gradlew :app:assembleDebug --no-daemon)
+```
+
+El APK de prueba se genera en `android/app/build/outputs/apk/debug/app-debug.apk`. Tiene firma de desarrollo; requiere un teléfono o emulador para verificar instalación y funciones. Antes de distribuir actualizaciones hay que acordar identificador definitivo y firma de distribución respaldada.
 
 ## iOS
 
-El proyecto Xcode está en `ios/`. `npm run ios:sync` genera recursos, pero en macOS se requieren Xcode, herramientas compatibles, resolución de dependencias nativas y firma adecuada. No se puede validar compilación iOS en este Linux. La identidad `io.necktral.gastos.entorno` es provisional para el esqueleto; acordar identificador y firma antes de distribuir actualizaciones.
+`npm run ios:sync` prepara los recursos; compilar y probar requiere macOS, Xcode, CocoaPods y un destino Apple. No se ha ejecutado esa validación.
 
-## Estructura y datos
+## Respaldo
 
-`src/dominio`, `src/datos`, `src/interfaz` y `src/exportaciones` reservan límites para la siguiente fase. `config/ejemplo.json` y `config/esquema-v1.json` son estructura descriptiva sintética; el esquema se valida en las pruebas, pero todavía no hay respaldo implementado. Las reglas financieras y la conservación histórica se implementarán y probarán en el mandato funcional. SQLite, cámara, archivos y compartir están instalados como dependencias, sin afirmar que funcionen en ambas plataformas. ExcelJS y pdf-lib están instaladas como candidatas, pendientes de pruebas en ambas plataformas; la auditoría señala dos vulnerabilidades moderadas ligadas a ExcelJS que se deben resolver antes de producción.
+La aplicación crea un ZIP con los registros de la base, imágenes, versión de esquema y huellas SHA-256. Restaurar valida antes de reemplazar datos y usa una transacción para los registros. El archivo compartido **no está cifrado ni autenticado con contraseña**: elegir un destino privado y verificar la restauración en un dispositivo antes de confiarle datos reales. La copia de pruebas no garantiza conservación ante daños del teléfono, apagones o cambios de plataforma. La recuperación entre dispositivos y cualquier cifrado adicional requieren una decisión posterior.
 
-No agregar bases, imágenes reales, respaldos, secretos o claves de firma al repositorio. Mantener la firma de distribución bajo control del propietario, con respaldo separado; no se ha creado ninguna clave de producción.
+Ver [ficha y evidencia de la fase](docs/fases/01-primer-recorrido.md). Errores y medidas de prevención están en `ERRORES_Y_GUARDAS.md`.

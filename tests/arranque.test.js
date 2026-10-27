@@ -17,5 +17,5 @@ test("la pantalla inicial se puede compilar y contiene el aviso del entorno", as
     id: "inicio",
   });
   assert.deepEqual(resultado.errors, []);
-  assert.match(resultado.code, /Entorno de desarrollo/);
+  assert.match(resultado.code, /Registrar compra/);
 });

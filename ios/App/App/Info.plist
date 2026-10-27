@@ -2,6 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Tomar fotos de comprobantes de compras.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Guardar imágenes de comprobantes cuando se solicite.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Elegir fotos de comprobantes de compras.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>

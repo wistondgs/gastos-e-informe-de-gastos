@@ -22,6 +22,28 @@
 
 ---
 
+## E-01 · Se cambió la pantalla sin actualizar el criterio de su prueba de arranque
+**Clase:** instrumento · **Veces que saltó:** 1 · La prueba seguía buscando el texto de la pantalla vacía.
+**2026-10-27, fase 01 (error de Codex).** `npm run check` falló porque `tests/arranque.test.js` exigía «Entorno de desarrollo» después de implementar «Registrar compra».
+**Por qué.** Se sustituyó la interfaz sin revisar el criterio de la prueba de arranque existente.
+**Severidad.** Tiempo de verificación; la compuerta falló, sin pérdida de datos.
+**Firma (cómo se detecta).** El componente compila, pero la prueba busca un texto de una pantalla anterior.
+**Guarda** `[MECÁNICA]`: ejecutar la prueba de arranque junto con la compilación tras cambiar la pantalla; su aserción busca el acceso al registro vigente.
+**Aplicada en:** `tests/arranque.test.js`, ejecutada por `npm run check`. Mutante observado: el texto anterior produjo el fallo antes de actualizarlo.
+
+---
+
+## E-02 · Se perdió la verificación de referencias al exportar SQLite en el navegador
+**Clase:** instrumento · **Veces que saltó:** 1 · Exportar una base SQL.js apaga `foreign_keys` en su conexión.
+**2026-10-27, fase 01 (error de Codex).** Una comprobación con SQL.js devolvió `PRAGMA foreign_keys = 1` antes de `Database.export()` y `0` después; el adaptador guardaba sin reactivar la opción.
+**Por qué.** Se asumió que exportar una base conservaba la configuración de la conexión, sin verificar la propiedad real después de persistir.
+**Severidad.** Integridad referencial de la vista de navegador; no había datos reales en la prueba. Android utiliza otra conexión SQLite.
+**Firma (cómo se detecta).** `PRAGMA foreign_keys` devuelve 0 después de exportar o de reconstruir la conexión.
+**Guarda** `[MECÁNICA]`: reactivar claves foráneas tras cada exportación o reconstrucción y probar que una foto huérfana se rechaza.
+**Aplicada en:** `src/datos/adaptador-sqljs.js` y `tests/recorrido.test.js`. Mutante observado: el adaptador anterior deja el pragma en 0 tras exportar.
+
+---
+
 ## Ejes no vigilados (agujeros declarados)
 
 *Un registro sin eventos pero con ejes no vigilados no es un certificado de salud: es un certificado con agujeros declarados.*
