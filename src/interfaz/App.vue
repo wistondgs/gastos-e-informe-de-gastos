@@ -14,7 +14,14 @@ import {
 } from "../datos/archivos.js";
 import { centavos, dinero } from "../dominio/compra.js";
 import { guardarCompra, verificarImagen } from "../dominio/operaciones.js";
-import { excel, pdf, pdfGestion } from "../exportaciones/informes.js";
+import { excel, pdf } from "../exportaciones/informes.js";
+import { informeExcel } from "../exportaciones/informe-excel.js";
+import {
+  emitirInforme,
+  modeloDeRevision,
+  regenerarInforme,
+  verificarArchivo,
+} from "../datos/emision.js";
 import { crearRespaldo, restaurarRespaldo } from "../datos/respaldo.js";
 import {
   informesLocales,
@@ -25,7 +32,6 @@ const repo = ref(null),
   filtroGestion = ref(null),
   gestiones = ref([]),
   estadoHistorial = ref("todas"),
-  informesGuardados = ref([]),
   nombreGestion = ref(""),
   inicioGestion = ref(""),
   cierreId = ref(null),
@@ -40,7 +46,13 @@ const repo = ref(null),
   encabezado = ref("Informe de gastos"),
   pantalla = ref("inicio"),
   paso = ref(1),
-  version = ref("Consultando…");
+  version = ref("Consultando…"),
+  ajustes = ref({ encabezado: "", responsable: "", destinatario: "" }),
+  informeGestion = ref(null),
+  informeForm = ref({}),
+  informeSeleccion = ref([]),
+  revisiones = ref([]),
+  informesSinRegistro = ref([]);
 function ir(destino) {
   pantalla.value = destino;
   error.value = "";
@@ -101,7 +113,8 @@ async function cargar() {
   compras.value = await repo.value.compras();
   gestiones.value = await repo.value.gestiones();
   if (!inicioGestion.value) inicioGestion.value = hoy();
-  encabezado.value = await repo.value.ajuste();
+  ajustes.value = await repo.value.ajustes();
+  encabezado.value = ajustes.value.encabezado;
   if (seleccion.value) {
     seleccion.value =
       compras.value.find((c) => c.id === seleccion.value.id) || null;
@@ -266,37 +279,120 @@ async function exportar(formato, conFotos = true) {
     );
   });
 }
-async function exportarGestion(g, incluirFotos) {
+const comprasDelInforme = computed(() =>
+  informeGestion.value
+    ? compras.value
+        .filter(
+          (c) =>
+            c.gestion_id === informeGestion.value.id &&
+            c.fecha_compra <= informeForm.value.corte,
+        )
+        .sort((a, b) => a.fecha_compra.localeCompare(b.fecha_compra))
+    : [],
+);
+function prepararInformeDe(g) {
+  const corte =
+    g.fecha_fin || (hoy() < g.fecha_inicio ? g.fecha_inicio : hoy());
+  informeGestion.value = g;
+  informeForm.value = {
+    titulo: ajustes.value.encabezado || "Rendición de gastos",
+    responsable: ajustes.value.responsable,
+    destinatario: ajustes.value.destinatario,
+    corte,
+    papel: "carta",
+    estilo: "ejecutivo",
+    incluirFotos: true,
+  };
+  informeSeleccion.value = compras.value
+    .filter((c) => c.gestion_id === g.id)
+    .map((c) => c.id);
+  ir("preparar-informe");
+}
+async function emitir() {
   await operacion(async () => {
-    const comprasGestion = compras.value.filter((c) => c.gestion_id === g.id);
-    const items = [];
-    for (const compra of comprasGestion)
-      items.push({ compra, fotos: await repo.value.fotos(compra.id) });
-    const bytes = await pdfGestion(
-      g,
-      items,
-      archivos,
-      encabezado.value,
-      incluirFotos,
+    const g = informeGestion.value,
+      f = informeForm.value;
+    const elegidas = comprasDelInforme.value.filter((c) =>
+      informeSeleccion.value.includes(c.id),
     );
-    await informesLocales.guardar(g.id, bytes);
+    const items = [];
+    for (const compra of elegidas)
+      items.push({ compra, fotos: await repo.value.fotos(compra.id) });
+    const { registro } = await emitirInforme({
+      repo: repo.value,
+      files: archivos,
+      almacen: informesLocales,
+      gestion: g,
+      items,
+      opciones: {
+        ...f,
+        titulo: f.titulo.trim(),
+        responsable: f.responsable.trim(),
+        destinatario: f.destinatario.trim(),
+      },
+    });
+    await repo.value.guardarAjustes({
+      encabezado: f.titulo.trim(),
+      responsable: f.responsable.trim(),
+      destinatario: f.destinatario.trim(),
+    });
+    await cargar();
     await cargarInformes();
-    mensaje.value =
+    pantalla.value = "informes";
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    mensaje.value = `Informe ${registro.codigo} emitido (revisión ${registro.revision}) y guardado ${
       Capacitor.getPlatform() === "android"
-        ? `Informe guardado en Documentos/${CARPETA_INFORMES}.`
+        ? `en Documentos/${CARPETA_INFORMES}`
         : nativo
-          ? `Informe guardado en ${CARPETA_INFORMES} dentro de la aplicación.`
-          : "Informe guardado en el almacenamiento de este navegador de prueba.";
+          ? "dentro de la aplicación"
+          : "en este navegador de prueba"
+    }.`;
   });
 }
 async function cargarInformes() {
-  informesGuardados.value = await informesLocales.listar();
+  const registros = await repo.value.informes();
+  const lista = [];
+  for (const r of registros)
+    lista.push({
+      ...r,
+      estado: await verificarArchivo(informesLocales, r),
+      nombre: gestiones.value.find((g) => g.id === r.gestion_id)?.nombre,
+    });
+  revisiones.value = lista;
+  const conRegistro = new Set(registros.map((r) => r.archivo));
+  informesSinRegistro.value = (await informesLocales.listar()).filter(
+    (n) => !conRegistro.has(n),
+  );
 }
 async function abrirInformes() {
   await operacion(async () => {
     await cargarInformes();
     pantalla.value = "informes";
     window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+const ESTADO_ARCHIVO = {
+  verificado: "Archivo verificado",
+  alterado: "El archivo guardado cambió: se entrega una copia regenerada",
+  ausente: "Archivo no encontrado: se entrega una copia regenerada",
+};
+async function abrirRevision(r) {
+  await operacion(async () => {
+    const bytes =
+      r.estado === "verificado"
+        ? await informesLocales.leer(r.archivo)
+        : await regenerarInforme(repo.value, archivos, r);
+    await compartir(`${r.codigo}.pdf`, bytes, "application/pdf");
+  });
+}
+async function excelRevision(r) {
+  await operacion(async () => {
+    const bytes = await informeExcel(await modeloDeRevision(repo.value, r));
+    await compartir(
+      `${r.codigo}.xlsx`,
+      bytes,
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
   });
 }
 function etiquetaInforme(nombre) {
@@ -306,6 +402,8 @@ function etiquetaInforme(nombre) {
   const d = match[2];
   return `${g?.nombre || "Gestión no disponible"} · ${d.slice(6, 8)}/${d.slice(4, 6)}/${d.slice(0, 4)} ${d.slice(9, 11)}:${d.slice(11, 13)} UTC`;
 }
+const fechaVista = (iso) =>
+  iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
 async function abrirInforme(nombre) {
   await operacion(async () => {
     const bytes = await informesLocales.leer(nombre);
@@ -345,7 +443,7 @@ async function restaurar(event) {
     fotos.value = [];
     vistas.value = [];
     await cargar();
-    mensaje.value = `Restauración completa: ${resultado.compras} compras y ${resultado.fotos} comprobantes.`;
+    mensaje.value = `Restauración completa: ${resultado.compras} compras, ${resultado.fotos} comprobantes y ${resultado.informes} informes emitidos.`;
   });
 }
 const nativo = Capacitor.isNativePlatform();
@@ -495,23 +593,11 @@ const nativo = Capacitor.isNativePlatform();
                 type="button"
                 class="text-control"
                 :disabled="ocupado"
-                @click="exportarGestion(g, true)"
+                @click="prepararInformeDe(g)"
               >
-                PDF con fotos
-              </button>
-              <button
-                type="button"
-                class="text-control"
-                :disabled="ocupado"
-                @click="exportarGestion(g, false)"
-              >
-                PDF sin fotos
+                Preparar informe
               </button>
             </div>
-            <p class="hint">
-              El PDF incluye todas las compras de esta gestión; todavía no se
-              filtra por empresa o destinatario. Revisalo antes de compartirlo.
-            </p>
             <div v-if="!g.fecha_fin" class="button-row">
               <button
                 type="button"
@@ -797,8 +883,88 @@ const nativo = Capacitor.isNativePlatform();
           </button>
         </div>
       </section>
+      <section
+        v-if="informeGestion && pantalla === 'preparar-informe'"
+        class="card"
+      >
+        <button type="button" class="back-link" @click="ir('gestiones')">
+          ← Volver a Gestiones
+        </button>
+        <span class="section-kicker">RENDICIÓN DE GASTOS</span>
+        <h2>Informe de {{ informeGestion.nombre }}</h2>
+        <p class="hint">
+          Cada emisión queda registrada como una revisión nueva. Las anteriores
+          no cambian.
+        </p>
+        <form @submit.prevent="emitir" class="step-fields">
+          <label
+            >Título del informe<input
+              v-model="informeForm.titulo"
+              maxlength="120"
+              required /></label
+          ><label
+            >Responsable<input
+              v-model="informeForm.responsable"
+              maxlength="120"
+              placeholder="Quién rinde los gastos" /></label
+          ><label
+            >Destinatario<input
+              v-model="informeForm.destinatario"
+              maxlength="120"
+              placeholder="Empresa o persona que recibe el informe" /></label
+          ><label
+            >Fecha de corte<input
+              v-model="informeForm.corte"
+              type="date"
+              :min="informeGestion.fecha_inicio"
+              required /></label
+          ><label
+            >Papel<select v-model="informeForm.papel">
+              <option value="carta">Carta</option>
+              <option value="a4">A4</option>
+            </select></label
+          ><label
+            >Presentación<select v-model="informeForm.estilo">
+              <option value="ejecutivo">Ejecutivo moderno</option>
+              <option value="formal">Formal para impresión</option>
+            </select></label
+          ><label class="check"
+            ><input
+              v-model="informeForm.incluirFotos"
+              type="checkbox"
+            />Adjuntar los comprobantes como anexos</label
+          >
+          <fieldset class="seleccion-informe">
+            <legend>Compras que se comparten</legend>
+            <p v-if="!comprasDelInforme.length" class="hint">
+              No hay compras hasta la fecha de corte.
+            </p>
+            <label v-for="c in comprasDelInforme" :key="c.id" class="check"
+              ><input
+                v-model="informeSeleccion"
+                type="checkbox"
+                :value="c.id"
+              /><span
+                >{{ fechaVista(c.fecha_compra) }} · {{ c.concepto }} ·
+                <strong>{{ dinero(c.importe, c.moneda) }}</strong></span
+              ></label
+            >
+            <p class="hint">
+              Desmarcá las compras que no corresponden a este destinatario. La
+              separación automática por empresa llega con las asignaciones.
+            </p>
+          </fieldset>
+          <button type="submit" class="primary" :disabled="ocupado || !repo">
+            Emitir informe PDF
+          </button>
+        </form>
+        <p class="hint">
+          El informe resume compras: no calcula anticipos, reembolsos ni saldos,
+          y emitirlo no equivale a aprobación ni a pago.
+        </p>
+      </section>
       <section v-show="pantalla === 'informes'" class="card">
-        <h2>Informes guardados</h2>
+        <h2>Informes emitidos</h2>
         <p v-if="nativo && Capacitor.getPlatform() === 'android'" class="hint">
           Informes PDF en Documentos/«{{ CARPETA_INFORMES }}». Para abrir uno,
           elegí una aplicación disponible en tu teléfono.
@@ -808,11 +974,46 @@ const nativo = Capacitor.isNativePlatform();
           una aplicación disponible en tu teléfono.
         </p>
         <p v-else class="hint">Informes guardados en el navegador de prueba.</p>
-        <p v-if="!informesGuardados.length" class="hint">
-          Todavía no hay informes guardados. Generá uno desde una gestión.
+        <p
+          v-if="!revisiones.length && !informesSinRegistro.length"
+          class="hint"
+        >
+          Todavía no hay informes. Prepará uno desde una gestión.
         </p>
+        <article v-for="r in revisiones" :key="r.id" class="revision-item">
+          <div>
+            <strong>{{ r.codigo }}</strong>
+            <span class="hint"
+              >{{ r.nombre || "Gestión no disponible" }} · revisión
+              {{ r.revision }} · corte {{ fechaVista(r.fecha_corte) }}</span
+            >
+            <small :class="['estado-archivo', r.estado]">{{
+              ESTADO_ARCHIVO[r.estado]
+            }}</small>
+          </div>
+          <div class="button-row">
+            <button
+              type="button"
+              class="secondary"
+              :disabled="ocupado"
+              @click="abrirRevision(r)"
+            >
+              Abrir PDF</button
+            ><button
+              type="button"
+              class="text-control"
+              :disabled="ocupado"
+              @click="excelRevision(r)"
+            >
+              Excel
+            </button>
+          </div>
+        </article>
+        <h3 v-if="informesSinRegistro.length">
+          Informes anteriores sin revisión
+        </h3>
         <button
-          v-for="nombre in informesGuardados"
+          v-for="nombre in informesSinRegistro"
           :key="nombre"
           type="button"
           class="purchase"
@@ -871,9 +1072,11 @@ const nativo = Capacitor.isNativePlatform();
           /></label>
         </div>
         <p class="hint">
-          El respaldo incluye compras y fotos, pero no los PDF guardados. No
-          tiene contraseña adicional: guardalo en un lugar privado. Restaurarlo
-          reemplaza los datos actuales.
+          El respaldo incluye compras, fotos y el registro de cada informe
+          emitido con su huella: después de restaurar, cada revisión se puede
+          regenerar idéntica. No incluye los archivos PDF. No tiene contraseña
+          adicional: guardalo en un lugar privado. Restaurarlo reemplaza los
+          datos actuales.
         </p>
       </section>
       <p class="footer">
@@ -928,6 +1131,59 @@ const nativo = Capacitor.isNativePlatform();
   </div>
 </template>
 <style scoped>
+.back-link + .section-kicker {
+  display: block;
+  margin-top: 14px;
+}
+.revision-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px 0;
+  border-top: 1px solid #e5eee7;
+}
+.revision-item > div:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.estado-archivo {
+  font-size: 12px;
+  font-weight: 650;
+}
+.estado-archivo.verificado {
+  color: #2f6b4f;
+}
+.estado-archivo.alterado,
+.estado-archivo.ausente {
+  color: #8a4b0f;
+}
+.seleccion-informe {
+  border: 1px solid #e5eee7;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.seleccion-informe legend {
+  font-weight: 700;
+  padding: 0 4px;
+}
+label.check {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+  font-weight: 500;
+}
+label.check input {
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  flex: none;
+  margin-top: 1px;
+}
 .developer-signature {
   display: flex;
   align-items: center;

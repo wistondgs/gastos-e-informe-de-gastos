@@ -200,7 +200,7 @@ test("respaldo y restauración transaccional; corrupción y fallo preservan el e
   assert.equal((await repo.fotos(c.id)).length, 1);
   assert.equal(files.data.size, 1);
   const resultado = await restaurarRespaldo(repo, files, zip);
-  assert.deepEqual(resultado, { compras: 1, fotos: 1 });
+  assert.deepEqual(resultado, { compras: 1, fotos: 1, informes: 0 });
   assert.equal((await repo.compras()).length, 1);
   const foto = (await repo.fotos(c.id))[0];
   assert.deepEqual(await files.leer(foto.ruta), png);

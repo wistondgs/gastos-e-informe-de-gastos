@@ -116,6 +116,15 @@ export function crearAlmacenInformes({
           .map((f) => f.name),
       );
     },
+    async borrar(nombre) {
+      if (!nombreValido(nombre)) throw new Error("Nombre de informe inválido.");
+      if (!nativo) storage.removeItem(key + nombre);
+      else
+        await filesystem.deleteFile({
+          path: ruta(nombre),
+          directory: Directory.Documents,
+        });
+    },
     async leer(nombre) {
       if (!nombreValido(nombre)) throw new Error("Nombre de informe inválido.");
       const data = nativo

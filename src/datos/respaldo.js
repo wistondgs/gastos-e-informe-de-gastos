@@ -3,6 +3,8 @@ import { huella } from "./archivos.js";
 import { validarCompra } from "../dominio/compra.js";
 import { validarGestion } from "../dominio/gestion.js";
 import { verificarImagen } from "../dominio/operaciones.js";
+import { validarAjustes } from "./base.js";
+import { ESTILOS, PAPELES } from "../dominio/informe.js";
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
 const MAX = 100 * 1024 * 1024;
@@ -11,11 +13,12 @@ export async function crearRespaldo(repo, files) {
   const fotos = [];
   for (const c of compras) fotos.push(...(await repo.fotos(c.id)));
   const datos = {
-    version: 2,
+    version: 3,
     compras,
     fotos,
     gestiones: await repo.gestiones(),
-    encabezado: await repo.ajuste(),
+    ajustes: await repo.ajustes(),
+    informes: await repo.informes(),
   };
   const zip = new JSZip();
   const json = encoder.encode(JSON.stringify(datos));
@@ -78,16 +81,26 @@ export async function restaurarRespaldo(repo, files, bytes) {
   }
   if (
     man.version !== 1 ||
-    ![1, 2].includes(datos.version) ||
-    (datos.version === 2 && !Array.isArray(datos.gestiones)) ||
+    ![1, 2, 3].includes(datos.version) ||
+    (datos.version >= 2 && !Array.isArray(datos.gestiones)) ||
+    (datos.version === 3 && !Array.isArray(datos.informes)) ||
     !Array.isArray(datos.compras) ||
     !Array.isArray(datos.fotos) ||
-    typeof datos.encabezado !== "string" ||
-    datos.encabezado.length > 120 ||
+    (datos.version < 3 &&
+      (typeof datos.encabezado !== "string" ||
+        datos.encabezado.length > 120)) ||
     !man.archivos ||
     typeof man.archivos !== "object"
   )
     throw new Error("Versión o estructura de respaldo inválida.");
+  let ajustes;
+  try {
+    ajustes = validarAjustes(
+      datos.version === 3 ? datos.ajustes : { encabezado: datos.encabezado },
+    );
+  } catch {
+    throw new Error("Versión o estructura de respaldo inválida.");
+  }
   const gestiones = datos.version === 1 ? [] : datos.gestiones;
   const gestionIds = new Set();
   for (const g of gestiones) {
@@ -131,6 +144,36 @@ export async function restaurarRespaldo(repo, files, bytes) {
       throw new Error("Un comprobante está alterado.");
     imagenes.push({ foto: f, bytes: contenido });
   }
+  const informes = datos.version === 3 ? datos.informes : [];
+  const revisiones = new Set(),
+    informeIds = new Set();
+  for (const i of informes) {
+    let snap;
+    try {
+      snap = JSON.parse(i.datos);
+    } catch {
+      snap = null;
+    }
+    const clave = `${i?.gestion_id}#${i?.revision}`;
+    if (
+      !i ||
+      !/^[a-zA-Z0-9-]{1,80}$/.test(i.id) ||
+      informeIds.has(i.id) ||
+      !gestionIds.has(i.gestion_id) ||
+      !Number.isSafeInteger(i.revision) ||
+      i.revision < 1 ||
+      revisiones.has(clave) ||
+      !Object.hasOwn(PAPELES, i.papel) ||
+      !ESTILOS.includes(i.estilo) ||
+      ![0, 1].includes(i.con_fotos) ||
+      !/^[a-f0-9]{64}$/.test(i.sha256) ||
+      !Array.isArray(snap?.compras) ||
+      snap.compras.some((id) => !ids.has(id))
+    )
+      throw new Error("Un informe emitido del respaldo es inválido.");
+    informeIds.add(i.id);
+    revisiones.add(clave);
+  }
   if (Object.keys(man.archivos).length !== fids.size)
     throw new Error("El manifiesto de comprobantes no coincide.");
   const antiguas = [];
@@ -143,11 +186,15 @@ export async function restaurarRespaldo(repo, files, bytes) {
       await files.escribir(ruta, contenido);
       staging.push({ ...foto, ruta });
     }
-    await repo.reemplazar(datos.compras, staging, datos.encabezado, gestiones);
+    await repo.reemplazar(datos.compras, staging, ajustes, gestiones, informes);
   } catch (error) {
     await Promise.all(staging.map((f) => files.borrar(f.ruta).catch(() => {})));
     throw new Error(`No se restauró el respaldo: ${error.message}`);
   }
   await Promise.all(antiguas.map((f) => files.borrar(f.ruta).catch(() => {})));
-  return { compras: datos.compras.length, fotos: staging.length };
+  return {
+    compras: datos.compras.length,
+    fotos: staging.length,
+    informes: informes.length,
+  };
 }

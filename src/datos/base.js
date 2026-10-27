@@ -7,6 +7,41 @@ PRAGMA user_version = 1;`;
 const migration2 = `CREATE TABLE gestiones (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, fecha_inicio TEXT NOT NULL, fecha_fin TEXT);
 ALTER TABLE compras ADD COLUMN gestion_id TEXT REFERENCES gestiones(id);
 PRAGMA user_version = 2;`;
+const migration3 = `CREATE TABLE informes (id TEXT PRIMARY KEY, gestion_id TEXT NOT NULL REFERENCES gestiones(id), revision INTEGER NOT NULL CHECK(revision > 0), codigo TEXT NOT NULL, fecha_corte TEXT NOT NULL, generado TEXT NOT NULL, papel TEXT NOT NULL CHECK(papel IN ('carta','a4')), estilo TEXT NOT NULL CHECK(estilo IN ('ejecutivo','formal')), con_fotos INTEGER NOT NULL CHECK(con_fotos IN (0,1)), datos TEXT NOT NULL, sha256 TEXT NOT NULL, archivo TEXT, UNIQUE(gestion_id, revision));
+PRAGMA user_version = 3;`;
+export const VERSION_ESQUEMA = 3;
+export const AJUSTES = {
+  encabezado: "Informe de gastos",
+  responsable: "",
+  destinatario: "",
+};
+const informeSql =
+  "INSERT INTO informes (id,gestion_id,revision,codigo,fecha_corte,generado,papel,estilo,con_fotos,datos,sha256,archivo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
+const informeVals = (i) => [
+  i.id,
+  i.gestion_id,
+  i.revision,
+  i.codigo,
+  i.fecha_corte,
+  i.generado,
+  i.papel,
+  i.estilo,
+  i.con_fotos,
+  i.datos,
+  i.sha256,
+  i.archivo ?? null,
+];
+export function validarAjustes(a) {
+  if (!a || typeof a !== "object") throw new Error("Ajustes inválidos.");
+  for (const [clave, valor] of Object.entries(a))
+    if (
+      !Object.hasOwn(AJUSTES, clave) ||
+      typeof valor !== "string" ||
+      valor.length > 120
+    )
+      throw new Error("Ajustes inválidos.");
+  return a;
+}
 const gestionSql =
   "INSERT INTO gestiones (id,nombre,fecha_inicio,fecha_fin) VALUES (?,?,?,?)";
 const gestionVals = (g) => [g.id, g.nombre, g.fecha_inicio, g.fecha_fin];
@@ -31,10 +66,11 @@ export async function inicializar(db) {
   await db.execute("PRAGMA foreign_keys = ON;", false);
   const versions = await db.query("PRAGMA user_version");
   const v = Number(versions.values?.[0]?.user_version || 0);
-  if (v > 2)
+  if (v > VERSION_ESQUEMA)
     throw new Error("La base fue creada con una versión más reciente.");
   if (v === 0) await db.execute(schema, true);
   if (v < 2) await db.execute(migration2, true);
+  if (v < 3) await db.execute(migration3, true);
 }
 export function repositorio(db) {
   return {
@@ -95,6 +131,51 @@ export function repositorio(db) {
         [texto],
       );
     },
+    async ajustes() {
+      const filas =
+        (await db.query("SELECT clave, valor FROM ajustes")).values || [];
+      const r = { ...AJUSTES };
+      for (const f of filas)
+        if (Object.hasOwn(AJUSTES, f.clave)) r[f.clave] = f.valor;
+      return r;
+    },
+    async guardarAjustes(a) {
+      validarAjustes(a);
+      await db.executeSet(
+        Object.entries(a).map(([clave, valor]) => ({
+          statement:
+            "INSERT OR REPLACE INTO ajustes (clave,valor) VALUES (?,?)",
+          values: [clave, valor],
+        })),
+        true,
+      );
+    },
+    async informes(gestionId = null) {
+      return (
+        (gestionId
+          ? await db.query(
+              "SELECT * FROM informes WHERE gestion_id=? ORDER BY revision DESC",
+              [gestionId],
+            )
+          : await db.query(
+              "SELECT * FROM informes ORDER BY generado DESC, revision DESC",
+            )
+        ).values || []
+      );
+    },
+    async siguienteRevision(gestionId) {
+      const r = await db.query(
+        "SELECT COALESCE(MAX(revision),0) AS n FROM informes WHERE gestion_id=?",
+        [gestionId],
+      );
+      return Number(r.values?.[0]?.n || 0) + 1;
+    },
+    /** Una revisión emitida se registra una vez y no se modifica después. */
+    async registrarInforme(i) {
+      if (!/^[a-f0-9]{64}$/.test(i?.sha256 || ""))
+        throw new Error("Huella de informe inválida.");
+      await db.run(informeSql, informeVals(i));
+    },
     async guardar(c, fotos) {
       validarCompra(c);
       if (c.gestion_id != null) {
@@ -120,8 +201,12 @@ export function repositorio(db) {
       await db.executeSet(set, true);
       return true;
     },
-    async reemplazar(compras, fotos, encabezado, gestiones = []) {
+    async reemplazar(compras, fotos, ajustes, gestiones = [], informes = []) {
+      const valores =
+        typeof ajustes === "string" ? { encabezado: ajustes } : ajustes;
+      validarAjustes(valores);
       const set = [
+        { statement: "DELETE FROM informes", values: [] },
         { statement: "DELETE FROM fotos", values: [] },
         { statement: "DELETE FROM compras", values: [] },
         { statement: "DELETE FROM gestiones", values: [] },
@@ -135,10 +220,14 @@ export function repositorio(db) {
           values: compraVals(c),
         })),
         ...fotos.map((f) => ({ statement: fotoSql, values: fotoVals(f) })),
-        {
+        ...informes.map((i) => ({
+          statement: informeSql,
+          values: informeVals(i),
+        })),
+        ...Object.entries(valores).map(([clave, valor]) => ({
           statement: "INSERT INTO ajustes (clave,valor) VALUES (?,?)",
-          values: ["encabezado", encabezado],
-        },
+          values: [clave, valor],
+        })),
       ];
       await db.executeSet(set, true);
     },

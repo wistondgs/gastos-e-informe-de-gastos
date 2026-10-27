@@ -62,7 +62,7 @@
 **Severidad.** Informe incompleto y confusión sobre la capacidad disponible; sin cambio en datos ni saldos.
 **Firma (cómo se detecta).** El único botón PDF depende de seleccionar una compra y no hay opción de generar un informe de la gestión completa.
 **Guarda** `[MECÁNICA]`: probar un informe con dos compras y dos monedas, verificar ambas cantidades y factura, y rechazar una compra de otra gestión.
-**Aplicada en:** `tests/informe-gestion.test.js` y `src/exportaciones/informes.js` (`pdfGestion`). Mutante observado: antes de implementar `pdfGestion`, la prueba falló al no existir la exportación agrupada.
+**Aplicada en:** `tests/informe-profesional.test.js` (dos monedas, factura, compra ajena y duplicada, corte y anexos) sobre `src/dominio/informe.js` y `src/exportaciones/informe-pdf.js`. Desde la V2, paquete 1, reemplaza a `pdfGestion` y su prueba. Mutante observado: el original, antes de existir la exportación agrupada; los de la V2, en la ficha `docs/fases/02-paquete1-informe-profesional.md`.
 
 ---
 
