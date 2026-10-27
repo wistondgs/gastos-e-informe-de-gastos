@@ -1,1 +1,10 @@
-{"appId":"io.necktral.gastos.entorno","appName":"Gastos Entorno","webDir":"dist"}
+{
+  "appId": "io.necktral.gastos.entorno",
+  "appName": "Gastos Entorno",
+  "webDir": "dist",
+  "plugins": {
+    "App": {
+      "disableBackButtonHandler": true
+    }
+  }
+}

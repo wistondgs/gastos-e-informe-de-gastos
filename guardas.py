@@ -259,6 +259,12 @@ def informe(out=sys.stdout):
 
 
 if __name__ == "__main__":
+    # Los saltos deliberados de los mutantes no pueden ir a los contadores reales (E-05).
+    _real = os.path.abspath(os.path.join(AQUI, "guardas_contadores.json"))
+    if "GUARDAS_CONTADORES" not in os.environ or os.path.abspath(CONTADORES) == _real:
+        sys.exit("Los mutantes necesitan GUARDAS_CONTADORES con un archivo distinto del real "
+                 "(E-05). Ejemplo: GUARDAS_CONTADORES=/tmp/contadores_prueba.json "
+                 "python3 guardas.py")
     # Mutantes: cada guarda tiene que poder fallar. Si todos pasan, las guardas sirven.
     print("=== mutantes de las guardas ===")
     ok = {}

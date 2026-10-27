@@ -66,6 +66,17 @@
 
 ---
 
+## E-05 · Se ejecutaron los mutantes de las guardas contra los contadores reales
+**Clase:** banco de trabajo · **Veces que saltó:** 1 · `guardas.py --help` corre los mutantes; sin `GUARDAS_CONTADORES` escribe en `guardas_contadores.json`.
+**2026-10-27, revisión del traspaso (error de Claude).** Para ver la ayuda se ejecutó `python3 -I guardas.py --help`; el módulo ignora los argumentos, corrió los once mutantes y creó `guardas_contadores.json` (antes inexistente) con sus saltos. Los recuentos coincidían exactamente con una sola corrida desde cero; se borró el archivo y los mutantes se repitieron con contadores aislados.
+**Por qué.** Se ejecutó un instrumento del proyecto para explorarlo sin leer antes qué hace al invocarse, aunque `AGENTS.md` advierte que los mutantes llevan contadores separados.
+**Severidad.** Contadores reales falseados durante unos minutos; sin datos de la aplicación afectados.
+**Firma (cómo se detecta).** `guardas_contadores.json` aparece o cambia con saltos de todas las guardas en el mismo segundo.
+**Guarda** `[MECÁNICA]`: `guardas.py` ejecutado como programa exige `GUARDAS_CONTADORES` distinto del archivo real; sin él se niega y no escribe nada.
+**Aplicada en:** `guardas.py`, bloque `__main__`. Mutante observado: sin la variable, la ejecución termina con error y el archivo real no se crea.
+
+---
+
 ## Ejes no vigilados (agujeros declarados)
 
 *Un registro sin eventos pero con ejes no vigilados no es un certificado de salud: es un certificado con agujeros declarados.*

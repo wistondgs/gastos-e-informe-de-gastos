@@ -2,6 +2,8 @@
 import { ref, computed, onMounted } from "vue";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Capacitor } from "@capacitor/core";
+import { App as Aplicacion } from "@capacitor/app";
+import { versionInstalada } from "./version.js";
 import { abrirRepositorio } from "../datos/abrir.js";
 import {
   archivos,
@@ -37,7 +39,8 @@ const repo = ref(null),
   ocupado = ref(false),
   encabezado = ref("Informe de gastos"),
   pantalla = ref("inicio"),
-  paso = ref(1);
+  paso = ref(1),
+  version = ref("Consultando…");
 function ir(destino) {
   pantalla.value = destino;
   error.value = "";
@@ -107,6 +110,11 @@ async function cargar() {
       : [];
   }
 }
+onMounted(async () => {
+  version.value = await versionInstalada(Capacitor.isNativePlatform(), () =>
+    Aplicacion.getInfo(),
+  );
+});
 onMounted(() =>
   operacion(async () => {
     repo.value = await abrirRepositorio();
@@ -363,6 +371,20 @@ const nativo = Capacitor.isNativePlatform();
           </p>
         </div>
         <button
+          type="button"
+          class="developer-signature"
+          aria-label="Acerca de Mis gastos"
+          @click="ir('acerca')"
+        >
+          <span class="wd-badge" aria-hidden="true">WD</span
+          ><span class="developer-copy"
+            ><span>Desarrollada por W. D. Gutiérrez</span
+            ><span class="developer-more"
+              >Acerca de <span aria-hidden="true">→</span></span
+            ></span
+          >
+        </button>
+        <button
           class="primary welcome-button"
           type="button"
           @click="ir('gestiones')"
@@ -385,6 +407,30 @@ const nativo = Capacitor.isNativePlatform();
           Esta versión registra compras y comprobantes. Los fondos, anticipos y
           créditos todavía están pendientes.
         </p>
+      </section>
+      <section
+        v-show="pantalla === 'acerca'"
+        class="card about-card"
+        aria-labelledby="acerca-titulo"
+      >
+        <button type="button" class="back-link" @click="ir('inicio')">
+          ← Volver a Inicio
+        </button>
+        <div class="about-heading">
+          <span class="wd-badge wd-badge-large" aria-hidden="true">WD</span>
+          <div>
+            <span class="section-kicker">MIS GASTOS</span>
+            <h2 id="acerca-titulo">Acerca de</h2>
+          </div>
+        </div>
+        <p class="about-description">Compras y comprobantes, a tu alcance.</p>
+        <div class="about-detail">
+          <span>Desarrollo</span
+          ><strong>Desarrollada por W. D. Gutiérrez</strong>
+        </div>
+        <div class="about-detail">
+          <span>Versión</span><strong>{{ version }}</strong>
+        </div>
       </section>
       <section v-show="pantalla === 'gestiones'" class="card gestion-screen">
         <span class="section-kicker">ORGANIZÁ TU JORNADA</span>
@@ -882,6 +928,85 @@ const nativo = Capacitor.isNativePlatform();
   </div>
 </template>
 <style scoped>
+.developer-signature {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 0 0 14px;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid #e5eee7;
+  color: #49695b;
+}
+.wd-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  border-radius: 12px;
+  background: #e5f1e0;
+  color: #185c4c;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: -0.4px;
+}
+.developer-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.developer-more {
+  color: #3d765e;
+  font-size: 11px;
+  font-weight: 700;
+}
+.about-card {
+  padding: 24px;
+}
+.about-heading {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 6px 0 15px;
+}
+.about-heading h2 {
+  margin: 4px 0 0;
+}
+.wd-badge-large {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  font-size: 19px;
+}
+.about-description {
+  color: #637e71;
+  line-height: 1.5;
+  margin: 0 0 18px;
+}
+.about-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 15px 0;
+  border-top: 1px solid #e5eee7;
+  line-height: 1.4;
+}
+.about-detail span {
+  font-size: 12px;
+  color: #6b8577;
+}
+.about-detail strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
 .gestion-form {
   margin-top: 20px;
 }
