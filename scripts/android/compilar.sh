@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Compila el APK y lo guarda aparte con su huella: Gradle vacía la carpeta de salida (E-08).
+# Compila el APK y lo guarda en apk/ del proyecto, con su huella: Gradle vacía la carpeta de salida (E-08).
 #   scripts/android/compilar.sh pruebas   → io.necktral.gastos.entorno.pruebas («Prueba beta de gastos»)
 #   scripts/android/compilar.sh oficial   → io.necktral.gastos.entorno
 set -euo pipefail
 variante="${1:?indicá pruebas u oficial}"
 raiz="$(cd "$(dirname "$0")/../.." && pwd)"
 entorno="${GASTOS_ENTORNO:-$HOME/.local/share/gastos-entorno}"
-destino="${GASTOS_APK_DIR:-$entorno/apk}"
+destino="${GASTOS_APK_DIR:-$raiz/apk}"
 export JAVA_HOME="$entorno/jdk21" ANDROID_HOME="$entorno/android-sdk"
 export PATH="$JAVA_HOME/bin:$PATH"
 case "$variante" in

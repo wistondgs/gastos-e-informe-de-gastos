@@ -61,7 +61,7 @@
 
 ### Android
 
-**Los APK,** en `~/.local/share/gastos-entorno/apk/`, firmados con la misma clave de desarrollo:
+**Los APK,** en `apk/` de la carpeta del proyecto, firmados con la misma clave de desarrollo:
 
 | | Paquete | Versión | Esquema | SHA-256 |
 |---|---|---|---|---|

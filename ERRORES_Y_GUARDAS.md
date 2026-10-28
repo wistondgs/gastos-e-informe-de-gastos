@@ -105,7 +105,7 @@
 **Por qué.** Se compiló sin revisar qué había en la carpeta de salida.
 **Severidad.** Evidencia perdida y tiempo de recompilación; sin datos afectados.
 **Firma (cómo se detecta).** Faltan APK con nombre propio en la carpeta de salida después de compilar.
-**Guarda** `[MECÁNICA]` (preventiva por construcción): `scripts/android/compilar.sh` copia cada APK a `~/.local/share/gastos-entorno/apk/` con paquete, versión, commit y huella en el nombre; nunca se guarda nada en la carpeta de salida.
+**Guarda** `[MECÁNICA]` (preventiva por construcción): `scripts/android/compilar.sh` copia cada APK a `apk/` de la carpeta del proyecto (antes, `~/.local/share/gastos-entorno/apk/`) con paquete, versión, commit y huella en el nombre; nunca se guarda nada en la carpeta de salida.
 **Aplicada en:** `scripts/android/compilar.sh`. No tiene mutante: no detecta, hace imposible el error.
 
 ---

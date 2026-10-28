@@ -24,3 +24,7 @@ ios/App/build/
 # Contadores locales de ejecución; nunca incluir datos reales en Git.
 guardas_contadores.json
 __pycache__/
+
+# Los APK compilados y el archivo viven en la carpeta del proyecto, fuera de git.
+apk/
+archivo/

@@ -9,6 +9,27 @@ Aplicación móvil independiente para registrar compras, comprobantes y el diner
 - **El respaldo v4:** la base completa, las fotos y las copias privadas de los informes, con manifiesto de huellas. **No está cifrado.** Restaura también los respaldos v1 a v3.
 - **El esquema 4** migra desde las bases 1, 2 y 3 sin perder compras, fotos ni identificadores. Ver `docs/fases/03-orden-ingenieria-v2.md`.
 
+## Dónde está todo
+
+Todo el proyecto vive en esta carpeta: `/home/wis/dev/gastos-e-informe-de-gastos`. En `Documentos/app movil gastos` hay un acceso directo a ella.
+
+| Carpeta | Qué hay |
+|---|---|
+| `src/`, `tests/`, `scripts/` | El código de la app, sus pruebas y los guiones (compilar, entregar al teléfono, ejemplos) |
+| `android/`, `ios/` | Los proyectos nativos de Capacitor |
+| `apk/` | **La aplicación compilada**: cada APK con su paquete, su versión, su commit y su huella. Fuera de git |
+| `docs/mandatos/` | Los documentos 01, 02 y 03 del proyecto (mandato, plan y roadmap) |
+| `docs/CONTRATOS_API.md` | El contrato de la API local, para quien diseña la interfaz |
+| `docs/entregas/` | El informe del prototipo de pantallas, para la integración |
+| `docs/fases/`, `docs/validaciones/`, `docs/requisitos/` | Las fichas de cada fase, la validación en el POCO y las aclaraciones de negocio |
+| `docs/evidencia/` | Los ejemplos: PDF, Excel, respaldo y capturas, con datos ficticios |
+| `ERRORES_Y_GUARDAS.md` | Los errores propios y su guarda |
+| `archivo/` | Lo que ya no se usa, guardado por si acaso: la primera versión abandonada y las exportaciones de prueba de Codex. Fuera de git |
+
+**El prototipo de pantallas** no es un archivo de esta carpeta: es el lienzo «App de Gastos» de claude.ai, https://claude.ai/artifact/HFNsyhBkZFfc8iyw7JXY1W.
+
+**Las herramientas de Android** (JDK y SDK) están en `~/.local/share/gastos-entorno/`. Son del entorno, no del proyecto.
+
 ## Desarrollo
 
 Requiere Node 22–24 y npm:
@@ -29,7 +50,7 @@ scripts/android/compilar.sh oficial    # io.necktral.gastos.entorno
 scripts/android/entregar.sh <apk> PASO-B-instalar.apk
 ```
 
-`compilar.sh` guarda cada APK en `~/.local/share/gastos-entorno/apk/`, con su versión, su commit y su huella (E-08). `entregar.sh` se niega si ya hay otro APK en Descargas (E-06) y verifica que el teléfono lo haya indexado (E-07).
+`compilar.sh` guarda cada APK en `apk/` de esta carpeta, con su versión, su commit y su huella (E-08). `entregar.sh` se niega si ya hay otro APK en Descargas (E-06) y verifica que el teléfono lo haya indexado (E-07).
 
 iOS: `npm run ios:sync` prepara los recursos; compilar y probar requiere macOS y Xcode. No se validó.
 
