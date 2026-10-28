@@ -174,3 +174,14 @@
 ## Cómo añadir una entrada
 
 Número siguiente, fecha, los campos del formato, y la guarda con su tipo. Si la guarda no puede ser mecánica, decir por qué y en qué punto del flujo va la pregunta.
+
+---
+
+## E-14 · Se reinstalaron dependencias en el árbol principal en vez de la copia aislada
+**Clase:** banco de trabajo · **Veces que saltó:** 1 · `npm ci` se ejecutó en el directorio de trabajo principal.
+**2026-10-28, validación Android (error de Codex).** Al crear una copia aislada se encadenó `npm ci` al comando que la creaba, pero el directorio del proceso seguía siendo `/home/wis/dev/gastos-e-informe-de-gastos`. Git seguía limpio; `node_modules` fue reinstalado y se desconoce si contenía modificaciones manuales.
+**Por qué.** Se supuso que crear una copia de trabajo cambiaba el directorio del proceso.
+**Severidad.** Posible pérdida de ajustes locales ignorados en dependencias; sin evidencia de cambios en archivos versionados ni datos de la aplicación.
+**Firma (cómo se detecta).** Un comando de instalación o compilación destructiva apunta al árbol principal pese a existir una ruta aislada.
+**Guarda** `[PREGUNTA → punto 0]`: antes de ejecutar instalaciones o compilaciones que reemplacen archivos, comprobar el directorio efectivo, el destino y el estado de archivos ignorados afectados; usar un proceso con directorio explícito de la copia aislada.
+**Aplicada en:** `PLANTILLA_FASE.md`, punto 0; el enganche es obligatorio por `AGENTS.md`.
