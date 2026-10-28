@@ -61,4 +61,27 @@
 
 ### Android
 
-(Se completa con la prueba PASO-A → PASO-B.)
+**Los APK,** en `~/.local/share/gastos-entorno/apk/`, firmados con la misma clave de desarrollo:
+
+| | Paquete | Versión | Esquema | SHA-256 |
+|---|---|---|---|---|
+| PASO-A | `io.necktral.gastos.entorno.pruebas` | 1.0 (código 1), de `ae64da2` | 1 | `76cd9ba00269297bcce0cf5d9aca2f00c22200491b536700fc201789af5fb5d3` |
+| PASO-B | `io.necktral.gastos.entorno.pruebas` | 2.0.0-alfa.1 (código 2), de `02cdbe9` | 4 | `eaa0bfdc7c143c9723b7260795dcc7aa6872478a884533be60b60a5fa35ebde6` |
+
+Mismo identificador, misma firma y código de versión superior: PASO-B actualiza a PASO-A sin borrar sus datos.
+
+**Ensayo en la PC** (`scripts/android/sinteticos.mjs`):
+- se cargaron 4 compras y 3 fotos sintéticas en la base vacía del esquema 1 y se migraron con el código real;
+- la versión 4 conserva todas las filas, los ceros, los importes y las huellas de las fotos;
+- si falta una foto, la verificación lo detecta;
+- el guion se niega a cargar datos en una base que no está vacía.
+
+**Procedimiento en el teléfono:**
+1. Instalar PASO-A desde Descargas (`PASO-A-instalar-Gastos-pruebas.apk`), abrirla una vez y cerrarla.
+2. `scripts/android/prueba-actualizacion.sh cargar <carpeta>`: carga los datos sintéticos por `run-as`, sin tocar la pantalla.
+3. `… verificar <carpeta>`: la línea de base, en la versión 1.
+4. Borrar PASO-A de Descargas. `scripts/android/entregar.sh <PASO-B> PASO-B-actualizar-Prueba-beta.apk`. El propietario la instala: el teléfono dice «Actualizar», y esta vez es lo correcto.
+5. Abrirla una vez. `… verificar <carpeta>`: versión 4, las mismas filas y las mismas fotos.
+6. En PASO-B: emitir un informe, crear un respaldo y restaurarlo.
+
+**Estado:** el teléfono se desconectó antes del paso 1. La Gate 5 **no está ejecutada**.
