@@ -1,120 +1,103 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import initSqlJs from "sql.js";
 import JSZip from "jszip";
 import { adaptarSqlJs } from "../src/datos/adaptador-sqljs.js";
 import { inicializar, repositorio } from "../src/datos/base.js";
-import { crearRespaldo, restaurarRespaldo } from "../src/datos/respaldo.js";
-import { crearAlmacenInformes } from "../src/datos/informes-locales.js";
-import {
-  emitirInforme,
-  regenerarInforme,
-  verificarArchivo,
-  modeloDeRevision,
-} from "../src/datos/emision.js";
 import { huella } from "../src/datos/archivos.js";
-import { png, fotoDe, archivosEnMemoria, compraDe } from "./apoyo-informes.js";
-const SQL = await initSqlJs();
-const v2 = `CREATE TABLE compras (id TEXT PRIMARY KEY, fecha_compra TEXT NOT NULL, fecha_registro TEXT NOT NULL, concepto TEXT NOT NULL, proveedor TEXT NOT NULL, importe INTEGER NOT NULL CHECK(importe > 0), moneda TEXT NOT NULL CHECK(moneda IN ('NIO','USD')), factura TEXT NOT NULL, estado TEXT NOT NULL CHECK(estado IN ('factura','sin_factura','pendiente')));
+import { SQL, entorno, basico, compra, imagen } from "./apoyo-api.js";
+const v1 = `CREATE TABLE compras (id TEXT PRIMARY KEY, fecha_compra TEXT NOT NULL, fecha_registro TEXT NOT NULL, concepto TEXT NOT NULL, proveedor TEXT NOT NULL, importe INTEGER NOT NULL CHECK(importe > 0), moneda TEXT NOT NULL CHECK(moneda IN ('NIO','USD')), factura TEXT NOT NULL, estado TEXT NOT NULL CHECK(estado IN ('factura','sin_factura','pendiente')));
 CREATE TABLE fotos (id TEXT PRIMARY KEY, compra_id TEXT NOT NULL REFERENCES compras(id) ON DELETE CASCADE, ruta TEXT NOT NULL UNIQUE, tipo TEXT NOT NULL, clase TEXT NOT NULL, sha256 TEXT NOT NULL);
 CREATE TABLE ajustes (clave TEXT PRIMARY KEY, valor TEXT NOT NULL);
-CREATE TABLE gestiones (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, fecha_inicio TEXT NOT NULL, fecha_fin TEXT);
+PRAGMA user_version = 1;`;
+const v3 = `CREATE TABLE gestiones (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, fecha_inicio TEXT NOT NULL, fecha_fin TEXT);
 ALTER TABLE compras ADD COLUMN gestion_id TEXT REFERENCES gestiones(id);
-PRAGMA user_version = 2;`;
-const gestion = {
-  id: "gestion-1",
-  nombre: "Winston Managua",
-  fecha_inicio: "2026-10-20",
-  fecha_fin: null,
-};
-const opciones = {
-  titulo: "Rendición",
-  responsable: "Responsable de prueba",
-  destinatario: "Destinatario de prueba",
-  corte: "2026-10-27",
-  papel: "carta",
-  estilo: "ejecutivo",
-  incluirFotos: true,
-};
-function almacenEnMemoria() {
-  const datos = new Map();
-  const storage = {
-    getItem: (k) => (datos.has(k) ? datos.get(k) : null),
-    setItem: (k, v) => datos.set(k, String(v)),
-    removeItem: (k) => datos.delete(k),
-    key: (i) => [...datos.keys()][i] ?? null,
-    get length() {
-      return datos.size;
-    },
-  };
-  let reloj = 0;
-  return {
-    datos,
-    almacen: crearAlmacenInformes({
-      nativo: false,
-      storage,
-      ahora: () => new Date(Date.UTC(2026, 9, 27, 20, 0, reloj++)),
-    }),
-  };
-}
-async function baseV2ConDatos() {
+CREATE TABLE informes (id TEXT PRIMARY KEY, gestion_id TEXT NOT NULL REFERENCES gestiones(id), revision INTEGER NOT NULL CHECK(revision > 0), codigo TEXT NOT NULL, fecha_corte TEXT NOT NULL, generado TEXT NOT NULL, papel TEXT NOT NULL CHECK(papel IN ('carta','a4')), estilo TEXT NOT NULL CHECK(estilo IN ('ejecutivo','formal')), con_fotos INTEGER NOT NULL CHECK(con_fotos IN (0,1)), datos TEXT NOT NULL, sha256 TEXT NOT NULL, archivo TEXT, UNIQUE(gestion_id, revision));
+PRAGMA user_version = 3;`;
+const version = async (db) =>
+  (await db.query("PRAGMA user_version")).values[0].user_version;
+function baseV1() {
   const old = new SQL.Database();
-  old.run(v2);
+  old.run(v1);
   old.run(
-    "INSERT INTO gestiones VALUES ('gestion-1','Winston Managua','2026-10-20',NULL)",
+    "INSERT INTO compras VALUES ('previa','2026-10-26','2026-10-27T00:00:00Z','Existente','Proveedor',125075,'NIO','0001230','factura')",
   );
   old.run(
-    "INSERT INTO compras VALUES ('c1','2026-10-21','2026-10-21T12:00:00Z','Compra supermercado','Proveedor','820000','NIO','0000123','factura','gestion-1')",
-  );
-  old.run(
-    "INSERT INTO compras VALUES ('c2','2026-10-22','2026-10-22T12:00:00Z','Alimentación','Proveedor','8500','USD','0000125','factura','gestion-1')",
-  );
-  old.run(
-    "INSERT INTO fotos VALUES ('foto-1','c1','comprobantes/foto-1.png','image/png','factura','x')",
+    `INSERT INTO fotos VALUES ('foto-1','previa','comprobantes/foto-1.png','image/png','factura','${"a".repeat(64)}')`,
   );
   old.run("INSERT INTO ajustes VALUES ('encabezado','Mi encabezado')");
-  return old.export();
+  return old;
 }
-async function preparado() {
-  const db = adaptarSqlJs(SQL, await baseV2ConDatos(), () => {});
+async function empaquetar(datos, manifiesto = { version: 1, archivos: {} }) {
+  const z = new JSZip();
+  const json = new TextEncoder().encode(JSON.stringify(datos));
+  z.file("datos.json", json);
+  z.file(
+    "manifiesto.json",
+    JSON.stringify({ ...manifiesto, datos: await huella(json) }),
+  );
+  return z.generateAsync({ type: "uint8array" });
+}
+test("la migración 1→4 conserva compras, identificadores, ceros, importes y fotos (la base del APK PASO-A)", async () => {
+  const db = adaptarSqlJs(SQL, baseV1().export(), () => {});
+  await inicializar(db);
+  assert.equal(await version(db), 4);
+  const repo = repositorio(db);
+  const [c] = await repo.compras();
+  assert.equal(c.id, "previa");
+  assert.equal(c.factura, "0001230");
+  assert.equal(c.importe, 125075);
+  assert.equal(
+    c.gestion_id,
+    null,
+    "una compra histórica no se asigna a una gestión",
+  );
+  assert.equal(
+    c.forma_pago,
+    "sin_detalle",
+    "ni se le inventa una forma de pago",
+  );
+  assert.equal((await repo.fotos("previa"))[0].ruta, "comprobantes/foto-1.png");
+  assert.equal(await repo.ajuste(), "Mi encabezado");
+  await inicializar(db);
+  assert.equal(
+    (await repo.compras()).length,
+    1,
+    "inicializar dos veces no duplica",
+  );
+});
+test("la migración 3→4 conserva los informes emitidos con su serie de revisiones", async () => {
+  const old = baseV1();
+  old.run(v3);
+  old.run(
+    "INSERT INTO gestiones VALUES ('g1','Gestión vieja','2026-10-20',NULL)",
+  );
+  old.run(
+    `INSERT INTO informes VALUES ('i1','g1',1,'GR-G1-R01','2026-10-27','2026-10-27T20:00:00Z','carta','ejecutivo',0,'{"compras":[]}','${"b".repeat(64)}','viejo.pdf')`,
+  );
+  const db = adaptarSqlJs(SQL, old.export(), () => {});
   await inicializar(db);
   const repo = repositorio(db);
-  const files = archivosEnMemoria();
-  const bytes = png(200, 300);
-  const foto = await fotoDe("foto-1", "c1", bytes);
-  await files.escribir(foto.ruta, bytes);
-  await db.run("UPDATE fotos SET sha256=? WHERE id='foto-1'", [foto.sha256]);
-  const items = async () => {
-    const r = [];
-    for (const compra of await repo.compras())
-      r.push({ compra, fotos: await repo.fotos(compra.id) });
-    return r;
-  };
-  return { db, repo, files, items, ...almacenEnMemoria() };
-}
-test("la migración 2→3 conserva gestiones, compras, fotos y el encabezado", async () => {
-  const { db, repo } = await preparado();
-  assert.equal(
-    (await db.query("PRAGMA user_version")).values[0].user_version,
-    3,
-  );
-  assert.equal((await repo.compras()).length, 2);
-  assert.equal((await repo.fotos("c1"))[0].ruta, "comprobantes/foto-1.png");
-  assert.equal((await repo.gestiones())[0].nombre, "Winston Managua");
-  assert.equal((await repo.ajustes()).encabezado, "Mi encabezado");
-  assert.equal((await repo.ajustes()).responsable, "");
-  assert.deepEqual(await repo.informes(), []);
+  const [i] = await repo.informes();
+  assert.equal(i.clave, "gestion:g1");
+  assert.equal(i.motor, 1);
+  assert.deepEqual(JSON.parse(i.alcance), {
+    tipo: "gestion",
+    gestion_id: "g1",
+  });
+  assert.equal(await repo.siguienteRevision("gestion:g1"), 2);
 });
-test("si la migración 3 falla, la base queda en la versión 2 sin perder nada", async () => {
-  const db = adaptarSqlJs(SQL, await baseV2ConDatos(), () => {});
+test("si la migración 4 falla, la base queda en la versión 3 sin perder nada", async () => {
+  const old = baseV1();
+  old.run(v3);
+  const db = adaptarSqlJs(SQL, old.export(), () => {});
   const defectuoso = {
     ...db,
     async execute(sql, t) {
-      if (sql.includes("CREATE TABLE informes"))
+      if (sql.includes("CREATE TABLE partes"))
         return db.execute(
           sql.replace(
-            "PRAGMA user_version = 3;",
-            "INSERT INTO tabla_inexistente VALUES (1); PRAGMA user_version = 3;",
+            "PRAGMA user_version = 4;",
+            "INSERT INTO tabla_inexistente VALUES (1); PRAGMA user_version = 4;",
           ),
           t,
         );
@@ -122,199 +105,244 @@ test("si la migración 3 falla, la base queda en la versión 2 sin perder nada",
     },
   };
   await assert.rejects(() => inicializar(defectuoso));
+  assert.equal(await version(db), 3);
   assert.equal(
-    (await db.query("PRAGMA user_version")).values[0].user_version,
-    2,
-  );
-  assert.equal(
-    (await db.query("SELECT name FROM sqlite_master WHERE name='informes'"))
+    (await db.query("SELECT name FROM sqlite_master WHERE name='partes'"))
       .values.length,
     0,
   );
-  assert.equal((await db.query("SELECT * FROM compras")).values.length, 2);
+  assert.equal((await db.query("SELECT * FROM compras")).values.length, 1);
 });
-test("cada emisión es una revisión nueva, regenerable idéntica y verificable", async () => {
-  const { repo, files, items, almacen, datos } = await preparado();
-  const ahora = () => new Date("2026-10-27T20:00:00.000Z");
-  const r1 = await emitirInforme({
-    repo,
-    files,
-    almacen,
-    gestion,
-    items: await items(),
-    opciones,
-    ahora,
-  });
-  const r2 = await emitirInforme({
-    repo,
-    files,
-    almacen,
-    gestion,
-    items: await items(),
+test("una base de una versión más nueva se rechaza sin tocarla", async () => {
+  const nueva = new SQL.Database();
+  nueva.run("PRAGMA user_version = 9");
+  const db = adaptarSqlJs(SQL, nueva.export(), () => {});
+  await assert.rejects(() => inicializar(db), /más reciente/);
+  assert.equal(await version(db), 9);
+});
+const opciones = {
+  titulo: "Rendición",
+  responsable: "Responsable",
+  destinatario: "Destino",
+  corte: "2026-10-27",
+  papel: "carta",
+  estilo: "ejecutivo",
+  incluirFotos: true,
+};
+const deGestion = { tipo: "gestion", gestion_id: "g1" };
+test("cada emisión es una revisión nueva; la entregada se regenera idéntica aunque después cambien los datos", async () => {
+  const { api, storage } = await entorno();
+  await basico(api);
+  await api.compras.registrar(compra({ id: "x1", imagenes: [imagen()] }));
+  const r1 = await api.informes.emitir({ alcance: deGestion, opciones });
+  const r2 = await api.informes.emitir({
+    alcance: deGestion,
     opciones: { ...opciones, estilo: "formal" },
-    ahora,
   });
-  assert.equal(r1.registro.revision, 1);
-  assert.equal(r2.registro.revision, 2);
-  assert.equal(r2.registro.codigo, "GR-GESTION1-R02");
-  const registros = await repo.informes("gestion-1");
-  assert.deepEqual(
-    registros.map((r) => r.revision),
-    [2, 1],
-  );
-  const rev1 = registros.find((r) => r.revision === 1);
-  assert.equal(rev1.sha256, await huella(r1.bytes));
-  assert.equal(await verificarArchivo(almacen, rev1), "verificado");
-  // Después de emitir: una compra nueva, la gestión terminada y otros ajustes.
-  await repo.guardar(
-    compraDe("c9", "NIO", 500, { fecha_compra: "2026-10-23" }),
-    [],
-  );
-  await repo.cerrarGestion("gestion-1", "2026-10-28");
-  await repo.guardarAjustes({ responsable: "Otra persona" });
-  const copia = await regenerarInforme(repo, files, rev1);
+  assert.deepEqual([r1.informe.revision, r2.informe.revision], [1, 2]);
+  assert.equal(r2.informe.codigo, "GR-G1-R02");
+  assert.equal(r1.informe.sha256, await huella(r1.bytes));
+  // Después: compra nueva, gestión cerrada, otro ajuste del anexo y dinero recibido.
+  await api.compras.registrar(compra({ id: "x2", importe: 500 }));
+  await api.gestiones.cerrar("g1", "2026-10-28");
+  const { fotos } = await api.compras.detalle("x1");
+  await api.anexos.ajustar(fotos[0].id, { rotacion: 90 });
+  await api.fondos.recibir({
+    fecha: "2026-10-27",
+    parte_id: "agricola",
+    importe: 100,
+    moneda: "NIO",
+    aplicaciones: [{ gestion_id: "g1", destino: "anticipo", importe: 100 }],
+  });
   assert.equal(
-    await huella(copia),
-    rev1.sha256,
-    "la revisión entregada no cambia",
+    await huella((await api.informes.regenerar(r1.informe.id)).bytes),
+    r1.informe.sha256,
   );
-  const modelo = await modeloDeRevision(repo, rev1);
-  assert.equal(modelo.gestion.fecha_fin, null);
-  assert.equal(modelo.opciones.responsable, "Responsable de prueba");
-  assert.ok(!modelo.filas.some((f) => f.compra.id === "c9"));
-  // Una huella que no coincide nunca se entrega como copia fiel.
-  await assert.rejects(
-    () => regenerarInforme(repo, files, { ...rev1, sha256: "0".repeat(64) }),
-    /no coincide/,
+  const lista = await api.informes.listar();
+  const uno = lista.find((r) => r.id === r1.informe.id);
+  assert.equal(uno.privado_estado, "verificado");
+  assert.equal(uno.compartido_estado, "verificado");
+  assert.ok(!("datos" in uno), "el listado no arrastra el modelo completo");
+  // Una copia privada alterada se detecta; abrir entrega la compartida verificada.
+  storage.setItem(`p:${r1.informe.privado}`, "AAAA");
+  assert.equal(
+    (await api.informes.listar()).find((r) => r.id === r1.informe.id)
+      .privado_estado,
+    "alterado",
   );
-  // Un archivo alterado o borrado se detecta.
-  const clave = [...datos.keys()].find((k) => k.endsWith(rev1.archivo));
-  datos.set(clave, Buffer.from("otro").toString("base64"));
-  assert.equal(await verificarArchivo(almacen, rev1), "alterado");
-  datos.delete(clave);
-  assert.equal(await verificarArchivo(almacen, rev1), "ausente");
-  // Una foto alterada impide regenerar en silencio.
-  files.m.set("comprobantes/foto-1.png", png(5, 5));
-  await assert.rejects(() => regenerarInforme(repo, files, rev1), /alterado/);
+  const abierto = await api.informes.abrir(r1.informe.id);
+  assert.equal(abierto.origen, "compartido");
+  assert.equal(await huella(abierto.bytes), r1.informe.sha256);
+  // Sin ninguna copia, abrir regenera y verifica.
+  storage.removeItem(`c:${r1.informe.archivo}`);
+  assert.equal((await api.informes.abrir(r1.informe.id)).origen, "regenerado");
 });
-test("la revisión elegida solo incluye las compras seleccionadas", async () => {
-  const { repo, files, items, almacen } = await preparado();
-  const todos = await items();
-  const r = await emitirInforme({
-    repo,
-    files,
-    almacen,
-    gestion,
-    items: todos.filter((i) => i.compra.id === "c2"),
-    opciones,
-  });
-  assert.deepEqual(JSON.parse(r.registro.datos).compras, ["c2"]);
-  assert.deepEqual(JSON.parse(r.registro.datos).totales, { USD: 8500 });
-});
-test("si el registro de la revisión falla, no queda el PDF guardado", async () => {
-  const { repo, files, items, almacen, datos } = await preparado();
-  const roto = {
-    ...repo,
-    registrarInforme: async () => {
-      throw new Error("disco lleno");
-    },
+test("una revisión fallida no deja archivos ni registro; la misma revisión no se registra dos veces", async () => {
+  const { api, repo, storage } = await entorno();
+  await basico(api);
+  const registrar = repo.registrarInforme;
+  repo.registrarInforme = async () => {
+    throw new Error("disco lleno");
   };
   await assert.rejects(
-    () =>
-      emitirInforme({
-        repo: roto,
-        files,
-        almacen,
-        gestion,
-        items: [],
-        opciones,
-      }),
+    () => api.informes.emitir({ alcance: deGestion, opciones }),
     /No se registró/,
   );
-  assert.equal([...datos.keys()].length, 0);
-  assert.deepEqual(await repo.informes(), []);
-  await emitirInforme({
-    repo,
-    files,
-    almacen,
-    gestion,
-    items: await items(),
+  repo.registrarInforme = registrar;
+  assert.equal(storage.length, 0);
+  assert.deepEqual(await api.informes.listar(), []);
+  const { informe } = await api.informes.emitir({
+    alcance: deGestion,
     opciones,
   });
-  const [emitida] = await repo.informes();
+  const fila = await repo.una("informes", informe.id);
   await assert.rejects(
-    () => repo.registrarInforme({ ...emitida, id: "otro" }),
+    () => repo.registrarInforme({ ...fila, id: "otro" }),
     /UNIQUE/,
-    "la misma revisión no se registra dos veces",
   );
 });
-test("el respaldo v3 conserva ajustes y revisiones; un v2 sigue restaurando", async () => {
-  const { repo, files, items, almacen } = await preparado();
-  await repo.guardarAjustes({
-    responsable: "Responsable de prueba",
-    destinatario: "Destino",
-  });
-  const { registro } = await emitirInforme({
-    repo,
-    files,
-    almacen,
-    gestion,
-    items: await items(),
+test("el respaldo v4 conserva todo y la revisión se regenera idéntica en otro dispositivo", async () => {
+  const origen = await entorno();
+  await basico(origen.api);
+  await origen.api.compras.registrar(
+    compra({
+      id: "y1",
+      forma_pago: "contado",
+      asignaciones: [{ parte_id: "agricola", importe: 100000 }],
+      pagos: [{ origen: "propio", importe: 100000 }],
+      imagenes: [imagen()],
+    }),
+  );
+  const { informe } = await origen.api.informes.emitir({
+    alcance: deGestion,
     opciones,
   });
-  const zip = await crearRespaldo(repo, files);
-  const db2 = adaptarSqlJs(SQL, null, () => {});
-  await inicializar(db2);
-  const repo2 = repositorio(db2);
-  const files2 = archivosEnMemoria();
-  const r = await restaurarRespaldo(repo2, files2, zip);
-  assert.equal(r.informes, 1);
-  assert.equal((await repo2.ajustes()).destinatario, "Destino");
-  const [rest] = await repo2.informes();
-  assert.equal(rest.sha256, registro.sha256);
-  assert.equal(
-    await huella(await regenerarInforme(repo2, files2, rest)),
-    registro.sha256,
-  );
-  // Un respaldo v2 (sin informes ni ajustes nuevos) sigue entrando.
-  const z = await JSZip.loadAsync(zip);
-  const d = JSON.parse(await z.file("datos.json").async("string"));
-  const viejo = {
-    version: 2,
-    compras: d.compras,
-    fotos: d.fotos,
-    gestiones: d.gestiones,
-    encabezado: "Viejo",
-  };
-  const json = new TextEncoder().encode(JSON.stringify(viejo));
-  z.file("datos.json", json);
-  const man = JSON.parse(await z.file("manifiesto.json").async("string"));
-  man.datos = await huella(json);
-  z.file("manifiesto.json", JSON.stringify(man));
-  await restaurarRespaldo(
-    repo2,
-    files2,
-    await z.generateAsync({ type: "uint8array" }),
-  );
-  assert.equal((await repo2.ajustes()).encabezado, "Viejo");
-  assert.deepEqual(await repo2.informes(), []);
-  // Una revisión que apunta a una compra inexistente se rechaza y no borra nada.
-  d.informes[0].datos = JSON.stringify({
-    ...JSON.parse(d.informes[0].datos),
-    compras: ["fantasma"],
+  await origen.api.informes.emitir({
+    alcance: deGestion,
+    opciones: { ...opciones, incluirFotos: false },
   });
-  const json2 = new TextEncoder().encode(JSON.stringify(d));
-  z.file("datos.json", json2);
-  man.datos = await huella(json2);
-  z.file("manifiesto.json", JSON.stringify(man));
+  const { bytes: zip, cifrado } = await origen.api.respaldo.crear();
+  assert.equal(cifrado, false, "el respaldo declara que no está cifrado");
+  const contenido = await JSZip.loadAsync(zip);
+  assert.equal(
+    Object.keys(contenido.files).filter(
+      (n) => n.startsWith("informes/") && !contenido.files[n].dir,
+    ).length,
+    2,
+  );
+  const destino = await entorno();
+  const r = await destino.api.respaldo.restaurar(zip);
+  assert.deepEqual(
+    [r.compras, r.fotos, r.informes, r.informes_con_archivo, r.movimientos],
+    [1, 1, 2, 2, 1],
+  );
+  assert.ok(
+    (await destino.api.informes.listar()).every(
+      (i) => i.privado_estado === "verificado",
+    ),
+  );
+  assert.equal(
+    await huella((await destino.api.informes.regenerar(informe.id)).bytes),
+    informe.sha256,
+    "otras rutas, mismos bytes",
+  );
+  assert.equal(
+    (await destino.api.saldos.consultar()).saldos[0].importe,
+    100000,
+  );
+  // Restaurar dos veces el mismo respaldo no duplica ni deja huérfanos.
+  await destino.api.respaldo.restaurar(zip);
+  assert.equal((await destino.api.compras.listar()).length, 1);
+  assert.equal(
+    [...destino.storage.m.keys()].filter((k) => k.startsWith("p:")).length,
+    2,
+  );
+  assert.equal(destino.files.m.size, 1);
+});
+test("los respaldos v2 y v3 siguen restaurando; uno incoherente o más nuevo se rechaza sin tocar nada", async () => {
+  const origen = await entorno();
+  await basico(origen.api);
+  await origen.api.compras.registrar(compra({ id: "z1" }));
+  const zip = await JSZip.loadAsync((await origen.api.respaldo.crear()).bytes);
+  const { tablas } = JSON.parse(await zip.file("datos.json").async("string"));
+  const legado = tablas.compras.map((c) => {
+    const { forma_pago, deudor_id, anulada, ...resto } = c;
+    (void forma_pago, deudor_id, anulada);
+    return resto;
+  });
+  const destino = await entorno();
+  await destino.api.respaldo.restaurar(
+    await empaquetar({
+      version: 2,
+      compras: legado,
+      fotos: [],
+      gestiones: tablas.gestiones.map(
+        ({ id, nombre, fecha_inicio, fecha_fin }) => ({
+          id,
+          nombre,
+          fecha_inicio,
+          fecha_fin,
+        }),
+      ),
+      encabezado: "Viejo",
+    }),
+  );
+  assert.equal(
+    (await destino.api.compras.listar())[0].forma_pago,
+    "sin_detalle",
+  );
+  assert.equal(await destino.repo.ajuste(), "Viejo");
+  await destino.api.respaldo.restaurar(
+    await empaquetar({
+      version: 3,
+      compras: legado.map((c) => ({ ...c, gestion_id: null })),
+      fotos: [],
+      gestiones: [],
+      ajustes: { encabezado: "v3" },
+      informes: [],
+    }),
+  );
+  assert.equal(await destino.repo.ajuste(), "v3");
+  const incoherente = {
+    ...tablas,
+    compras: tablas.compras.map((c) => ({ ...c, forma_pago: "contado" })),
+    pagos: [
+      {
+        id: "p",
+        compra_id: "z1",
+        asignacion_id: null,
+        fecha: "2026-10-21",
+        fecha_registro: "2026-10-21T00:00:00Z",
+        importe: 999999999,
+        origen: "propio",
+        parte_id: null,
+        anulada: null,
+      },
+    ],
+  };
   await assert.rejects(
     async () =>
-      restaurarRespaldo(
-        repo2,
-        files2,
-        await z.generateAsync({ type: "uint8array" }),
+      destino.api.respaldo.restaurar(
+        await empaquetar(
+          { version: 4, esquema: 4, tablas: incoherente },
+          { version: 2, archivos: {} },
+        ),
       ),
-    /informe emitido/,
+    /exceden/,
   );
-  assert.equal((await repo2.compras()).length, 2);
+  await assert.rejects(
+    async () =>
+      destino.api.respaldo.restaurar(
+        await empaquetar(
+          { version: 4, esquema: 9, tablas },
+          { version: 2, archivos: {} },
+        ),
+      ),
+    /más nueva/,
+  );
+  assert.equal(
+    await destino.repo.ajuste(),
+    "v3",
+    "los rechazos no tocaron nada",
+  );
 });

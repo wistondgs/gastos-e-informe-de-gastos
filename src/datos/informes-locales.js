@@ -2,71 +2,65 @@ import { Capacitor } from "@capacitor/core";
 import { Directory, Filesystem } from "@capacitor/filesystem";
 import { base64ABytes, bytesABase64, huella } from "./archivos.js";
 export const CARPETA_INFORMES = "Registros de mis gastos";
-const PREFIX = "informe-gestion-";
 const ausente = (e) =>
   /not exist|does not exist|not found|no such/i.test(e?.message || "");
-const ordenar = (nombres) =>
-  nombres.sort(
-    (a, b) =>
-      b.split("--")[1].localeCompare(a.split("--")[1]) || b.localeCompare(a),
-  );
-function nombreValido(nombre) {
-  return (
-    typeof nombre === "string" &&
-    /^informe-gestion-[a-zA-Z0-9-]{1,80}--\d{8}T\d{6}--[a-zA-Z0-9-]{1,80}\.pdf$/.test(
-      nombre,
-    )
-  );
-}
+export const nombreValido = (nombre) =>
+  typeof nombre === "string" &&
+  /^[A-Za-z0-9][A-Za-z0-9._-]{0,150}\.pdf$/.test(nombre) &&
+  !nombre.includes("..");
+/**
+ * Un almacén de PDF en una carpeta. La app usa dos: el privado (la copia de
+ * referencia de cada revisión, en sus archivos propios) y el compartido
+ * (Documentos, visible para otras apps). En el navegador de prueba, ambos
+ * viven en el almacenamiento local con prefijos distintos.
+ */
 export function crearAlmacenInformes({
   nativo,
   filesystem,
   storage,
-  uuid = () => crypto.randomUUID(),
-  ahora = () => new Date(),
+  directorio,
+  carpeta,
+  prefijo,
 }) {
-  const key = "gastos-informe:";
-  const ruta = (nombre) => `${CARPETA_INFORMES}/${nombre}`;
+  const ruta = (nombre) => `${carpeta}/${nombre}`;
+  const validar = (nombre) => {
+    if (!nombreValido(nombre)) throw new Error("Nombre de informe inválido.");
+  };
   return {
-    async guardar(gestionId, bytes) {
-      if (
-        !/^[a-zA-Z0-9-]{1,80}$/.test(gestionId) ||
-        !(bytes instanceof Uint8Array) ||
-        !bytes.length
-      )
+    carpeta,
+    async existe(nombre) {
+      validar(nombre);
+      if (!nativo) return storage.getItem(prefijo + nombre) !== null;
+      try {
+        await filesystem.stat({ path: ruta(nombre), directory: directorio });
+        return true;
+      } catch (e) {
+        if (ausente(e)) return false;
+        throw e;
+      }
+    },
+    /** Guarda sin pisar: escribe aparte, verifica la huella y recién entonces renombra. */
+    async guardar(nombre, bytes) {
+      validar(nombre);
+      if (!(bytes instanceof Uint8Array) || !bytes.length)
         throw new Error("El informe no es válido.");
-      const fecha = ahora().toISOString().replace(/[-:]/g, "").slice(0, 15);
-      const nombre = `${PREFIX}${gestionId}--${fecha}--${uuid()}.pdf`;
-      if (!nombreValido(nombre))
-        throw new Error("El nombre del informe no es válido.");
+      if (await this.existe(nombre))
+        throw new Error("Ya existe un informe con ese nombre.");
       if (!nativo) {
-        if (storage.getItem(key + nombre) !== null)
-          throw new Error("Ya existe un informe con ese nombre.");
-        storage.setItem(key + nombre, bytesABase64(bytes));
+        storage.setItem(prefijo + nombre, bytesABase64(bytes));
         return nombre;
       }
       const temporal = `${ruta(nombre)}.tmp`;
       try {
-        let existe = false;
-        try {
-          await filesystem.stat({
-            path: ruta(nombre),
-            directory: Directory.Documents,
-          });
-          existe = true;
-        } catch (e) {
-          if (!ausente(e)) throw e;
-        }
-        if (existe) throw new Error("Ya existe un informe con ese nombre.");
         await filesystem.writeFile({
           path: temporal,
           data: bytesABase64(bytes),
-          directory: Directory.Documents,
+          directory: directorio,
           recursive: true,
         });
         const leido = await filesystem.readFile({
           path: temporal,
-          directory: Directory.Documents,
+          directory: directorio,
         });
         if (
           typeof leido.data !== "string" ||
@@ -76,15 +70,15 @@ export function crearAlmacenInformes({
         await filesystem.rename({
           from: temporal,
           to: ruta(nombre),
-          directory: Directory.Documents,
+          directory: directorio,
         });
         return nombre;
       } catch (e) {
         await filesystem
-          .deleteFile({ path: temporal, directory: Directory.Documents })
+          .deleteFile({ path: temporal, directory: directorio })
           .catch(() => {});
         throw new Error(
-          `No se pudo guardar el informe en Documentos/${CARPETA_INFORMES}: ${e.message}`,
+          `No se pudo guardar el informe en ${carpeta}: ${e.message}`,
         );
       }
     },
@@ -93,56 +87,66 @@ export function crearAlmacenInformes({
         const nombres = [];
         for (let i = 0; i < storage.length; i++) {
           const k = storage.key(i);
-          if (k?.startsWith(key) && nombreValido(k.slice(key.length)))
-            nombres.push(k.slice(key.length));
+          if (k?.startsWith(prefijo) && nombreValido(k.slice(prefijo.length)))
+            nombres.push(k.slice(prefijo.length));
         }
-        return ordenar(nombres);
+        return nombres.sort();
       }
-      let result;
       try {
-        result = await filesystem.readdir({
-          path: CARPETA_INFORMES,
-          directory: Directory.Documents,
+        const r = await filesystem.readdir({
+          path: carpeta,
+          directory: directorio,
         });
+        return r.files
+          .filter((f) => f.type === "file" && nombreValido(f.name))
+          .map((f) => f.name)
+          .sort();
       } catch (e) {
         if (ausente(e)) return [];
         throw new Error(
           `No se puede abrir la carpeta de informes: ${e.message}`,
         );
       }
-      return ordenar(
-        result.files
-          .filter((f) => f.type === "file" && nombreValido(f.name))
-          .map((f) => f.name),
-      );
-    },
-    async borrar(nombre) {
-      if (!nombreValido(nombre)) throw new Error("Nombre de informe inválido.");
-      if (!nativo) storage.removeItem(key + nombre);
-      else
-        await filesystem.deleteFile({
-          path: ruta(nombre),
-          directory: Directory.Documents,
-        });
     },
     async leer(nombre) {
-      if (!nombreValido(nombre)) throw new Error("Nombre de informe inválido.");
+      validar(nombre);
       const data = nativo
         ? (
             await filesystem.readFile({
               path: ruta(nombre),
-              directory: Directory.Documents,
+              directory: directorio,
             })
           ).data
-        : storage.getItem(key + nombre);
+        : storage.getItem(prefijo + nombre);
       if (typeof data !== "string")
         throw new Error("No se encontró el informe.");
       return base64ABytes(data);
     },
+    async borrar(nombre) {
+      validar(nombre);
+      if (!nativo) storage.removeItem(prefijo + nombre);
+      else
+        await filesystem.deleteFile({
+          path: ruta(nombre),
+          directory: directorio,
+        });
+    },
   };
 }
-export const informesLocales = crearAlmacenInformes({
-  nativo: Capacitor.isNativePlatform(),
+const nativo = Capacitor.isNativePlatform();
+export const informesPrivados = crearAlmacenInformes({
+  nativo,
   filesystem: Filesystem,
   storage: globalThis.localStorage,
+  directorio: Directory.Data,
+  carpeta: "informes",
+  prefijo: "gastos-informe-privado:",
+});
+export const informesCompartidos = crearAlmacenInformes({
+  nativo,
+  filesystem: Filesystem,
+  storage: globalThis.localStorage,
+  directorio: Directory.Documents,
+  carpeta: CARPETA_INFORMES,
+  prefijo: "gastos-informe:",
 });

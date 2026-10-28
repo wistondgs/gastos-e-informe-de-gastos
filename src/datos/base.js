@@ -1,5 +1,6 @@
 import { validarCompra } from "../dominio/compra.js";
 import { validarGestion } from "../dominio/gestion.js";
+import { TABLA, TABLAS, insertarSql, valoresDe } from "./tablas.js";
 const schema = `CREATE TABLE IF NOT EXISTS compras (id TEXT PRIMARY KEY, fecha_compra TEXT NOT NULL, fecha_registro TEXT NOT NULL, concepto TEXT NOT NULL, proveedor TEXT NOT NULL, importe INTEGER NOT NULL CHECK(importe > 0), moneda TEXT NOT NULL CHECK(moneda IN ('NIO','USD')), factura TEXT NOT NULL, estado TEXT NOT NULL CHECK(estado IN ('factura','sin_factura','pendiente')));
 CREATE TABLE IF NOT EXISTS fotos (id TEXT PRIMARY KEY, compra_id TEXT NOT NULL REFERENCES compras(id) ON DELETE CASCADE, ruta TEXT NOT NULL UNIQUE, tipo TEXT NOT NULL, clase TEXT NOT NULL, sha256 TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS ajustes (clave TEXT PRIMARY KEY, valor TEXT NOT NULL);
@@ -9,28 +10,37 @@ ALTER TABLE compras ADD COLUMN gestion_id TEXT REFERENCES gestiones(id);
 PRAGMA user_version = 2;`;
 const migration3 = `CREATE TABLE informes (id TEXT PRIMARY KEY, gestion_id TEXT NOT NULL REFERENCES gestiones(id), revision INTEGER NOT NULL CHECK(revision > 0), codigo TEXT NOT NULL, fecha_corte TEXT NOT NULL, generado TEXT NOT NULL, papel TEXT NOT NULL CHECK(papel IN ('carta','a4')), estilo TEXT NOT NULL CHECK(estilo IN ('ejecutivo','formal')), con_fotos INTEGER NOT NULL CHECK(con_fotos IN (0,1)), datos TEXT NOT NULL, sha256 TEXT NOT NULL, archivo TEXT, UNIQUE(gestion_id, revision));
 PRAGMA user_version = 3;`;
-export const VERSION_ESQUEMA = 3;
+// Esquema 4: el control financiero, la auditoría y los anexos. Solo agrega;
+// la tabla de informes se reconstruye para admitir alcances sin gestión.
+const migration4 = `CREATE TABLE partes (id TEXT PRIMARY KEY, nombre TEXT NOT NULL, tipo TEXT NOT NULL CHECK(tipo IN ('persona','empresa')), activa INTEGER NOT NULL DEFAULT 1 CHECK(activa IN (0,1)), creada TEXT NOT NULL);
+ALTER TABLE gestiones ADD COLUMN descripcion TEXT NOT NULL DEFAULT '';
+ALTER TABLE gestiones ADD COLUMN responsable_id TEXT REFERENCES partes(id);
+ALTER TABLE compras ADD COLUMN forma_pago TEXT NOT NULL DEFAULT 'sin_detalle' CHECK(forma_pago IN ('sin_detalle','contado','credito'));
+ALTER TABLE compras ADD COLUMN deudor_id TEXT REFERENCES partes(id);
+ALTER TABLE compras ADD COLUMN anulada TEXT;
+CREATE TABLE anexos (foto_id TEXT PRIMARY KEY REFERENCES fotos(id), rotacion INTEGER NOT NULL DEFAULT 0 CHECK(rotacion IN (0,90,180,270)), enderezar REAL NOT NULL DEFAULT 0 CHECK(enderezar BETWEEN -15 AND 15), recorte TEXT, actualizado TEXT NOT NULL);
+CREATE TABLE asignaciones (id TEXT PRIMARY KEY, compra_id TEXT NOT NULL REFERENCES compras(id), parte_id TEXT REFERENCES partes(id), importe INTEGER NOT NULL CHECK(importe > 0), anulada TEXT);
+CREATE TABLE recepciones (id TEXT PRIMARY KEY, fecha TEXT NOT NULL, fecha_registro TEXT NOT NULL, parte_id TEXT NOT NULL REFERENCES partes(id), importe INTEGER NOT NULL CHECK(importe > 0), moneda TEXT NOT NULL CHECK(moneda IN ('NIO','USD')), referencia TEXT NOT NULL DEFAULT '', anulada TEXT);
+CREATE TABLE aplicaciones (id TEXT PRIMARY KEY, recepcion_id TEXT NOT NULL REFERENCES recepciones(id), gestion_id TEXT NOT NULL REFERENCES gestiones(id), destino TEXT NOT NULL CHECK(destino IN ('anticipo','reembolso')), importe INTEGER NOT NULL CHECK(importe > 0), anulada TEXT);
+CREATE TABLE pagos (id TEXT PRIMARY KEY, compra_id TEXT NOT NULL REFERENCES compras(id), asignacion_id TEXT REFERENCES asignaciones(id), fecha TEXT NOT NULL, fecha_registro TEXT NOT NULL, importe INTEGER NOT NULL CHECK(importe > 0), origen TEXT NOT NULL CHECK(origen IN ('propio','fondo','tercero')), parte_id TEXT REFERENCES partes(id), anulada TEXT);
+CREATE TABLE movimientos (id TEXT PRIMARY KEY, tipo TEXT NOT NULL CHECK(tipo IN ('devolucion','traslado')), gestion_id TEXT NOT NULL REFERENCES gestiones(id), gestion_destino_id TEXT REFERENCES gestiones(id), parte_id TEXT NOT NULL REFERENCES partes(id), fecha TEXT NOT NULL, fecha_registro TEXT NOT NULL, importe INTEGER NOT NULL CHECK(importe > 0), moneda TEXT NOT NULL CHECK(moneda IN ('NIO','USD')), anulada TEXT);
+CREATE TABLE eventos (id TEXT PRIMARY KEY, fecha TEXT NOT NULL, entidad TEXT NOT NULL, entidad_id TEXT NOT NULL, tipo TEXT NOT NULL, motivo TEXT NOT NULL, datos TEXT NOT NULL);
+CREATE INDEX compras_gestion ON compras(gestion_id);
+CREATE INDEX pagos_compra ON pagos(compra_id);
+CREATE INDEX asignaciones_compra ON asignaciones(compra_id);
+CREATE INDEX aplicaciones_recepcion ON aplicaciones(recepcion_id);
+CREATE INDEX eventos_entidad ON eventos(entidad, entidad_id);
+CREATE TABLE informes_v4 (id TEXT PRIMARY KEY, clave TEXT NOT NULL, alcance TEXT NOT NULL, gestion_id TEXT REFERENCES gestiones(id), revision INTEGER NOT NULL CHECK(revision > 0), codigo TEXT NOT NULL, fecha_corte TEXT NOT NULL, generado TEXT NOT NULL, papel TEXT NOT NULL CHECK(papel IN ('carta','a4')), estilo TEXT NOT NULL CHECK(estilo IN ('ejecutivo','formal')), con_fotos INTEGER NOT NULL CHECK(con_fotos IN (0,1)), motor INTEGER NOT NULL DEFAULT 1, datos TEXT NOT NULL, sha256 TEXT NOT NULL, archivo TEXT, privado TEXT, UNIQUE(clave, revision));
+INSERT INTO informes_v4 (id,clave,alcance,gestion_id,revision,codigo,fecha_corte,generado,papel,estilo,con_fotos,motor,datos,sha256,archivo,privado) SELECT id,'gestion:'||gestion_id,'{"tipo":"gestion","gestion_id":"'||gestion_id||'"}',gestion_id,revision,codigo,fecha_corte,generado,papel,estilo,con_fotos,1,datos,sha256,archivo,NULL FROM informes;
+DROP TABLE informes;
+ALTER TABLE informes_v4 RENAME TO informes;
+PRAGMA user_version = 4;`;
+export const VERSION_ESQUEMA = 4;
 export const AJUSTES = {
   encabezado: "Informe de gastos",
   responsable: "",
   destinatario: "",
 };
-const informeSql =
-  "INSERT INTO informes (id,gestion_id,revision,codigo,fecha_corte,generado,papel,estilo,con_fotos,datos,sha256,archivo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)";
-const informeVals = (i) => [
-  i.id,
-  i.gestion_id,
-  i.revision,
-  i.codigo,
-  i.fecha_corte,
-  i.generado,
-  i.papel,
-  i.estilo,
-  i.con_fotos,
-  i.datos,
-  i.sha256,
-  i.archivo ?? null,
-];
 export function validarAjustes(a) {
   if (!a || typeof a !== "object") throw new Error("Ajustes inválidos.");
   for (const [clave, valor] of Object.entries(a))
@@ -42,26 +52,6 @@ export function validarAjustes(a) {
       throw new Error("Ajustes inválidos.");
   return a;
 }
-const gestionSql =
-  "INSERT INTO gestiones (id,nombre,fecha_inicio,fecha_fin) VALUES (?,?,?,?)";
-const gestionVals = (g) => [g.id, g.nombre, g.fecha_inicio, g.fecha_fin];
-const compraSql =
-  "INSERT INTO compras (id,fecha_compra,fecha_registro,concepto,proveedor,importe,moneda,factura,estado,gestion_id) VALUES (?,?,?,?,?,?,?,?,?,?)";
-const fotoSql =
-  "INSERT INTO fotos (id,compra_id,ruta,tipo,clase,sha256) VALUES (?,?,?,?,?,?)";
-const compraVals = (c) => [
-  c.id,
-  c.fecha_compra,
-  c.fecha_registro,
-  c.concepto,
-  c.proveedor,
-  c.importe,
-  c.moneda,
-  c.factura,
-  c.estado,
-  c.gestion_id ?? null,
-];
-const fotoVals = (f) => [f.id, f.compra_id, f.ruta, f.tipo, f.clase, f.sha256];
 export async function inicializar(db) {
   await db.execute("PRAGMA foreign_keys = ON;", false);
   const versions = await db.query("PRAGMA user_version");
@@ -71,25 +61,80 @@ export async function inicializar(db) {
   if (v === 0) await db.execute(schema, true);
   if (v < 2) await db.execute(migration2, true);
   if (v < 3) await db.execute(migration3, true);
+  if (v < 4) await db.execute(migration4, true);
 }
+const insertar = (tabla, fila) => ({
+  statement: insertarSql(tabla),
+  values: valoresDe(tabla, fila),
+});
+const igualFila = (tabla, a, b) =>
+  JSON.stringify(valoresDe(tabla, a)) === JSON.stringify(valoresDe(tabla, b));
 export function repositorio(db) {
-  return {
-    async gestiones() {
+  const filas = async (sql, valores = []) =>
+    (await db.query(sql, valores)).values || [];
+  const repo = {
+    /** Todas las filas de una tabla, en el orden de su clave. */
+    async todas(tabla) {
+      const t = TABLA[tabla];
+      if (!t) throw new Error(`Tabla desconocida: ${tabla}`);
+      return filas(`SELECT * FROM ${t.nombre} ORDER BY ${t.clave || "id"}`);
+    },
+    async una(tabla, id) {
+      const t = TABLA[tabla];
       return (
         (
-          await db.query(
-            "SELECT * FROM gestiones ORDER BY fecha_inicio DESC, id",
-          )
-        ).values || []
+          await filas(`SELECT * FROM ${t.nombre} WHERE ${t.clave || "id"}=?`, [
+            id,
+          ])
+        )[0] || null
       );
+    },
+    /** Una foto completa de los datos: para calcular saldos y respaldar. */
+    async cargarTodo() {
+      const r = {};
+      for (const t of TABLAS) r[t.nombre] = await repo.todas(t.nombre);
+      return r;
+    },
+    /**
+     * Aplica en una sola transacción altas y cambios. Un alta repetida con el
+     * mismo contenido no duplica nada (devuelve false); con otro contenido falla.
+     */
+    async aplicar({ altas = [], cambios = [] }) {
+      const set = [];
+      let nuevas = 0;
+      for (const { tabla, fila } of altas) {
+        const clave = TABLA[tabla].clave || "id";
+        const previa = await repo.una(tabla, fila[clave]);
+        if (previa) {
+          if (!igualFila(tabla, previa, fila))
+            throw new Error("El identificador ya pertenece a otro registro.");
+          continue;
+        }
+        set.push(insertar(tabla, fila));
+        nuevas++;
+      }
+      for (const { tabla, id, campos } of cambios) {
+        const t = TABLA[tabla],
+          nombres = Object.keys(campos);
+        if (!nombres.every((c) => t.columnas.includes(c)))
+          throw new Error("Cambio inválido.");
+        set.push({
+          statement: `UPDATE ${t.nombre} SET ${nombres.map((c) => `${c}=?`).join(",")} WHERE ${t.clave || "id"}=?`,
+          values: [...nombres.map((c) => campos[c]), id],
+        });
+      }
+      if (set.length) await db.executeSet(set, true);
+      return nuevas > 0 || cambios.length > 0;
+    },
+    async gestiones() {
+      return filas("SELECT * FROM gestiones ORDER BY fecha_inicio DESC, id");
     },
     async crearGestion(g) {
       validarGestion(g);
-      await db.run(gestionSql, gestionVals(g));
+      return repo.aplicar({ altas: [{ tabla: "gestiones", fila: g }] });
     },
     async cerrarGestion(id, fecha) {
-      const g = (await db.query("SELECT * FROM gestiones WHERE id=?", [id]))
-        .values?.[0];
+      const g = await repo.una("gestiones", id);
       if (!g || g.fecha_fin)
         throw new Error("La gestión no existe o ya está terminada.");
       validarGestion({ ...g, fecha_fin: fecha });
@@ -99,43 +144,22 @@ export function repositorio(db) {
       );
     },
     async compras() {
-      return (
-        (
-          await db.query(
-            "SELECT * FROM compras ORDER BY fecha_registro DESC, id",
-          )
-        ).values || []
-      );
+      return filas("SELECT * FROM compras ORDER BY fecha_registro DESC, id");
     },
     async fotos(id) {
-      return (
-        (
-          await db.query(
-            "SELECT * FROM fotos WHERE compra_id = ? ORDER BY id",
-            [id],
-          )
-        ).values || []
-      );
+      return filas("SELECT * FROM fotos WHERE compra_id = ? ORDER BY id", [id]);
     },
     async ajuste() {
-      return (
-        (await db.query("SELECT valor FROM ajustes WHERE clave = 'encabezado'"))
-          .values?.[0]?.valor || "Informe de gastos"
-      );
+      return (await repo.ajustes()).encabezado || AJUSTES.encabezado;
     },
     async guardarAjuste(texto) {
       if (typeof texto !== "string" || texto.length > 120)
         throw new Error("Encabezado inválido.");
-      await db.run(
-        "INSERT OR REPLACE INTO ajustes (clave,valor) VALUES ('encabezado',?)",
-        [texto],
-      );
+      await repo.guardarAjustes({ encabezado: texto });
     },
     async ajustes() {
-      const filas =
-        (await db.query("SELECT clave, valor FROM ajustes")).values || [];
       const r = { ...AJUSTES };
-      for (const f of filas)
+      for (const f of await filas("SELECT clave, valor FROM ajustes"))
         if (Object.hasOwn(AJUSTES, f.clave)) r[f.clave] = f.valor;
       return r;
     },
@@ -150,86 +174,59 @@ export function repositorio(db) {
         true,
       );
     },
-    async informes(gestionId = null) {
-      return (
-        (gestionId
-          ? await db.query(
-              "SELECT * FROM informes WHERE gestion_id=? ORDER BY revision DESC",
-              [gestionId],
-            )
-          : await db.query(
-              "SELECT * FROM informes ORDER BY generado DESC, revision DESC",
-            )
-        ).values || []
-      );
+    async informes(clave = null) {
+      return clave
+        ? filas("SELECT * FROM informes WHERE clave=? ORDER BY revision DESC", [
+            clave,
+          ])
+        : filas("SELECT * FROM informes ORDER BY generado DESC, revision DESC");
     },
-    async siguienteRevision(gestionId) {
-      const r = await db.query(
-        "SELECT COALESCE(MAX(revision),0) AS n FROM informes WHERE gestion_id=?",
-        [gestionId],
+    async siguienteRevision(clave) {
+      const r = await filas(
+        "SELECT COALESCE(MAX(revision),0) AS n FROM informes WHERE clave=?",
+        [clave],
       );
-      return Number(r.values?.[0]?.n || 0) + 1;
+      return Number(r[0]?.n || 0) + 1;
     },
     /** Una revisión emitida se registra una vez y no se modifica después. */
     async registrarInforme(i) {
       if (!/^[a-f0-9]{64}$/.test(i?.sha256 || ""))
         throw new Error("Huella de informe inválida.");
-      await db.run(informeSql, informeVals(i));
+      await db.run(insertarSql("informes"), valoresDe("informes", i));
     },
     async guardar(c, fotos) {
       validarCompra(c);
       if (c.gestion_id != null) {
-        const g = (
-          await db.query("SELECT * FROM gestiones WHERE id=?", [c.gestion_id])
-        ).values?.[0];
+        const g = await repo.una("gestiones", c.gestion_id);
         if (!g || g.fecha_fin) throw new Error("Elegí una gestión abierta.");
       }
-      const previa = (
-        await db.query("SELECT * FROM compras WHERE id = ?", [c.id])
-      ).values?.[0];
+      const previa = await repo.una("compras", c.id);
       if (previa) {
-        if (
-          JSON.stringify(compraVals(previa)) !== JSON.stringify(compraVals(c))
-        )
+        if (!igualFila("compras", { ...previa, anulada: null }, c))
           throw new Error("El identificador ya pertenece a otra compra.");
         return false;
       }
-      const set = [
-        { statement: compraSql, values: compraVals(c) },
-        ...fotos.map((f) => ({ statement: fotoSql, values: fotoVals(f) })),
-      ];
-      await db.executeSet(set, true);
+      await db.executeSet(
+        [insertar("compras", c), ...fotos.map((f) => insertar("fotos", f))],
+        true,
+      );
       return true;
     },
-    async reemplazar(compras, fotos, ajustes, gestiones = [], informes = []) {
-      const valores =
-        typeof ajustes === "string" ? { encabezado: ajustes } : ajustes;
-      validarAjustes(valores);
-      const set = [
-        { statement: "DELETE FROM informes", values: [] },
-        { statement: "DELETE FROM fotos", values: [] },
-        { statement: "DELETE FROM compras", values: [] },
-        { statement: "DELETE FROM gestiones", values: [] },
-        { statement: "DELETE FROM ajustes", values: [] },
-        ...gestiones.map((g) => ({
-          statement: gestionSql,
-          values: gestionVals(g),
-        })),
-        ...compras.map((c) => ({
-          statement: compraSql,
-          values: compraVals(c),
-        })),
-        ...fotos.map((f) => ({ statement: fotoSql, values: fotoVals(f) })),
-        ...informes.map((i) => ({
-          statement: informeSql,
-          values: informeVals(i),
-        })),
-        ...Object.entries(valores).map(([clave, valor]) => ({
-          statement: "INSERT INTO ajustes (clave,valor) VALUES (?,?)",
-          values: [clave, valor],
-        })),
-      ];
+    /** Reemplaza todos los datos en una sola transacción (restauración). */
+    async reemplazarTodo(datos) {
+      validarAjustes(
+        Object.fromEntries(
+          (datos.ajustes || []).map((a) => [a.clave, a.valor]),
+        ),
+      );
+      const set = [];
+      for (const t of [...TABLAS].reverse())
+        set.push({ statement: `DELETE FROM ${t.nombre}`, values: [] });
+      for (const t of TABLAS)
+        for (const fila of datos[t.nombre] || [])
+          set.push(insertar(t.nombre, fila));
       await db.executeSet(set, true);
     },
   };
+  return repo;
 }

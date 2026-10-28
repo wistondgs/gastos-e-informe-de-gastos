@@ -77,6 +77,50 @@
 
 ---
 
+## E-06 · Se dejaron varios APK con nombres parecidos en Descargas del teléfono
+**Clase:** banco de trabajo · **Veces que saltó:** 1 · Tres APK casi iguales; uno era la app con datos reales.
+**2026-10-27, validación Android (error de Codex y de Claude).** En Descargas convivían `MisGastos-prueba-ae64da2.apk` (la app real), `Gastos-pruebas-aisladas-ae64da2.apk` y, agregado por Claude, `PRUEBAS-1-Gastos-pruebas-v1.apk`. El propietario no supo cuál servía; a las 17:29:42 el logcat registra la desinstalación de `io.necktral.gastos.entorno` desde el teléfono, y con ella se perdió la única compra real.
+**Por qué.** Se copió otro APK sin limpiar los anteriores ni pensar en quien tiene que elegir entre ellos en la pantalla del teléfono.
+**Severidad.** Pérdida de datos reales (una compra y sus fotos), sin respaldo.
+**Firma (cómo se detecta).** `ls /sdcard/Download` muestra más de un `.apk`, o el propietario pregunta cuál instalar.
+**Guarda** `[MECÁNICA]`: `scripts/android/entregar.sh` se niega a copiar si ya hay un APK en Descargas y obliga a un nombre visible explícito.
+**Aplicada en:** `scripts/android/entregar.sh`; prueba `tests/guiones-android.test.js`. Mutante observado: sin la comprobación, la prueba de E-06 falla.
+
+---
+
+## E-07 · Se copió un APK por adb sin que el teléfono lo indexara
+**Clase:** banco de trabajo · **Veces que saltó:** 1 · El instalador lo abría «en blanco».
+**2026-10-27, validación Android (error de Claude).** Tras `adb push`, el índice de medios tenía `_size=NULL` para `PASO-A-instalar-Gastos-pruebas.apk`; el propietario veía una pantalla en blanco al tocarlo. Con `content call --method scan_file` quedó con 28532354 bytes.
+**Por qué.** Se supuso que copiar el archivo bastaba para que el administrador de archivos lo viera completo.
+**Severidad.** Tiempo y confusión del propietario.
+**Firma (cómo se detecta).** El instalador muestra una pantalla vacía, o `content query` da `_size=NULL`.
+**Guarda** `[MECÁNICA]`: `scripts/android/entregar.sh` fuerza el reexamen y compara el tamaño indexado con el del archivo; si no coinciden, falla.
+**Aplicada en:** `scripts/android/entregar.sh`; prueba `tests/guiones-android.test.js`. Mutante observado: sin la comparación, la prueba de E-07 falla.
+
+---
+
+## E-08 · Una compilación borró los APK de referencia guardados en la carpeta de salida
+**Clase:** banco de trabajo · **Veces que saltó:** 1 · Gradle vacía `android/app/build/outputs/apk/debug/`.
+**2026-10-27, cierre del paquete 1 (error de Claude).** La compilación de las 17:01 eliminó `app-original-ae64da2.apk`, `gastos-pruebas-aisladas.apk` y otros que Codex había dejado ahí como referencia. Se reconstruyeron desde `ae64da2`.
+**Por qué.** Se compiló sin revisar qué había en la carpeta de salida.
+**Severidad.** Evidencia perdida y tiempo de recompilación; sin datos afectados.
+**Firma (cómo se detecta).** Faltan APK con nombre propio en la carpeta de salida después de compilar.
+**Guarda** `[MECÁNICA]` (preventiva por construcción): `scripts/android/compilar.sh` copia cada APK a `~/.local/share/gastos-entorno/apk/` con paquete, versión, commit y huella en el nombre; nunca se guarda nada en la carpeta de salida.
+**Aplicada en:** `scripts/android/compilar.sh`. No tiene mutante: no detecta, hace imposible el error.
+
+---
+
+## E-09 · Dos defectos del PDF solo se vieron al rasterizar
+**Clase:** instrumento · **Veces que saltó:** 1 · Las pruebas de texto pasaban.
+**2026-10-27, orden V2 (error de Claude).** En el informe por destinatario, el párrafo decía «sin movimientos de dinero registrados» aunque abajo mostraba saldos; las rayas del estado financiero tachaban la fila siguiente. Ambos se vieron en `docs/evidencia/informe/` al rasterizar con `pdftoppm`.
+**Por qué.** Las pruebas extraen el texto del PDF, pero no comprueban la coherencia entre secciones ni la posición de las líneas.
+**Severidad.** Un informe a terceros con una afirmación falsa y una lectura difícil.
+**Firma (cómo se detecta).** El PDF tiene secciones que se contradicen, o líneas que cruzan el texto.
+**Guarda** `[MECÁNICA]` + `[PREGUNTA → punto 2]`: `tests/api.test.js` exige que, con saldos, el texto no diga «sin movimientos». Y la ficha exige rasterizar y mirar cada PDF de ejemplo antes de cerrar.
+**Aplicada en:** `tests/api.test.js` (informe por destinatario) y `PLANTILLA_FASE.md`, punto 2.
+
+---
+
 ## Ejes no vigilados (agujeros declarados)
 
 *Un registro sin eventos pero con ejes no vigilados no es un certificado de salud: es un certificado con agujeros declarados.*

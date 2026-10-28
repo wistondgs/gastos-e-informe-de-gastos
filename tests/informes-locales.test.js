@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   crearAlmacenInformes,
-  CARPETA_INFORMES,
+  nombreValido,
 } from "../src/datos/informes-locales.js";
 function memoria() {
   const m = new Map();
@@ -13,9 +13,10 @@ function memoria() {
     key: (i) => [...m.keys()][i],
     getItem: (k) => m.get(k) ?? null,
     setItem: (k, v) => m.set(k, v),
+    removeItem: (k) => m.delete(k),
   };
 }
-function fsFalso() {
+function fsFalso(carpeta) {
   const m = new Map();
   return {
     m,
@@ -40,54 +41,73 @@ function fsFalso() {
     async readdir() {
       return {
         files: [...m.keys()]
-          .filter((p) => p.startsWith(CARPETA_INFORMES + "/"))
-          .map((p) => ({
-            name: p.slice(CARPETA_INFORMES.length + 1),
-            type: "file",
-          })),
+          .filter((p) => p.startsWith(carpeta + "/"))
+          .map((p) => ({ name: p.slice(carpeta.length + 1), type: "file" })),
       };
     },
   };
 }
-test("informes conservan historial separado, bytes y no sobrescriben", async () => {
-  const storage = memoria();
-  const fs = fsFalso();
-  const opciones = {
+const almacen = (fs, storage = memoria()) =>
+  crearAlmacenInformes({
     nativo: true,
     filesystem: fs,
     storage,
-    uuid: () => "identificador-unico",
-    ahora: () => new Date("2026-10-27T21:00:00Z"),
-  };
-  const reports = crearAlmacenInformes(opciones);
+    directorio: "DATA",
+    carpeta: "informes",
+    prefijo: "x:",
+  });
+test("el almacén guarda sin pisar, conserva los bytes y se puede volver a abrir", async () => {
+  const fs = fsFalso("informes");
+  const a = almacen(fs);
   const bytes = new Uint8Array([37, 80, 68, 70, 45, 49]);
-  const nombre = await reports.guardar("gestion-1", bytes);
-  assert.equal((await reports.listar()).length, 1);
-  assert.deepEqual(await reports.leer(nombre), bytes);
+  assert.equal(await a.guardar("GR-1-R01.pdf", bytes), "GR-1-R01.pdf");
+  assert.deepEqual(await a.listar(), ["GR-1-R01.pdf"]);
+  assert.deepEqual(await a.leer("GR-1-R01.pdf"), bytes);
   await assert.rejects(
-    () => reports.guardar("gestion-1", new Uint8Array([1, 2, 3])),
+    () => a.guardar("GR-1-R01.pdf", new Uint8Array([1])),
     /Ya existe/,
   );
-  assert.deepEqual(await reports.leer(nombre), bytes);
+  assert.deepEqual(await a.leer("GR-1-R01.pdf"), bytes);
   assert.equal(fs.m.size, 1);
-  const reabierto = crearAlmacenInformes(opciones);
-  assert.equal((await reabierto.listar())[0], nombre);
+  assert.deepEqual(await almacen(fs).listar(), ["GR-1-R01.pdf"]);
+  assert.equal(await a.existe("GR-1-R01.pdf"), true);
+  await a.borrar("GR-1-R01.pdf");
+  assert.equal(await a.existe("GR-1-R01.pdf"), false);
 });
-test("fallo de escritura y verificación no presenta un informe como guardado", async () => {
-  const fs = fsFalso();
-  const opts = {
-    nativo: true,
-    filesystem: fs,
-    storage: memoria(),
-    uuid: () => "id",
-    ahora: () => new Date("2026-10-27T21:00:00Z"),
-  };
-  const reports = crearAlmacenInformes(opts);
+test("si la verificación falla, el informe no queda presentado como guardado", async () => {
+  const fs = fsFalso("informes");
+  const a = almacen(fs);
   fs.readFile = async () => ({ data: "AA==" });
   await assert.rejects(
-    () => reports.guardar("gestion-1", new Uint8Array([1, 2, 3])),
+    () => a.guardar("GR-2-R01.pdf", new Uint8Array([1, 2, 3])),
     /verificar/,
   );
   assert.equal(fs.m.size, 0);
-  assert.deepEqual(await reports.listar(), []);
+  assert.deepEqual(await a.listar(), []);
+});
+test("los nombres no admiten rutas ni extensiones ajenas", () => {
+  for (const malo of ["../x.pdf", "a/b.pdf", "x.exe", "", ".pdf", "a..b.pdf"])
+    assert.equal(nombreValido(malo), false, malo);
+  assert.equal(
+    nombreValido("informe-gestion-x--20261027T210000--id.pdf"),
+    true,
+  );
+});
+test("en el navegador de prueba, privado y compartido no se mezclan", async () => {
+  const storage = memoria();
+  const privado = crearAlmacenInformes({
+    nativo: false,
+    storage,
+    carpeta: "informes",
+    prefijo: "p:",
+  });
+  const compartido = crearAlmacenInformes({
+    nativo: false,
+    storage,
+    carpeta: "R",
+    prefijo: "c:",
+  });
+  await privado.guardar("a.pdf", new Uint8Array([1]));
+  assert.deepEqual(await compartido.listar(), []);
+  assert.deepEqual(await privado.listar(), ["a.pdf"]);
 });

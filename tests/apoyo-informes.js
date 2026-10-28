@@ -104,3 +104,26 @@ export const compraDe = (id, moneda, importe, extra = {}) => ({
   estado: "factura",
   ...extra,
 });
+/** PNG gris claro con un bloque oscuro en la esquina superior izquierda (un cuarto de cada lado). */
+export function pngMarca(ancho, alto) {
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(ancho, 0);
+  ihdr.writeUInt32BE(alto, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 0;
+  const filas = [];
+  for (let y = 0; y < alto; y++) {
+    const fila = Buffer.alloc(ancho + 1, 225);
+    fila[0] = 0;
+    if (y < alto / 4) fila.fill(20, 1, 1 + Math.floor(ancho / 4));
+    filas.push(fila);
+  }
+  return new Uint8Array(
+    Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      trozo("IHDR", ihdr),
+      trozo("IDAT", deflateSync(Buffer.concat(filas))),
+      trozo("IEND", Buffer.alloc(0)),
+    ]),
+  );
+}

@@ -1,4 +1,5 @@
 export const monedas = ["NIO", "USD"];
+export const MONEDAS = monedas;
 export const estados = ["factura", "sin_factura", "pendiente"];
 export function centavos(texto) {
   const valor = String(texto).trim();

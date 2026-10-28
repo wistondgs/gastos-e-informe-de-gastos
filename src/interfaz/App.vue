@@ -4,7 +4,7 @@ import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Capacitor } from "@capacitor/core";
 import { App as Aplicacion } from "@capacitor/app";
 import { versionInstalada } from "./version.js";
-import { abrirRepositorio } from "../datos/abrir.js";
+import { abrirApi } from "../api/dispositivo.js";
 import {
   archivos,
   compartir,
@@ -15,18 +15,11 @@ import {
 import { centavos, dinero } from "../dominio/compra.js";
 import { guardarCompra, verificarImagen } from "../dominio/operaciones.js";
 import { excel, pdf } from "../exportaciones/informes.js";
-import { informeExcel } from "../exportaciones/informe-excel.js";
 import {
-  emitirInforme,
-  modeloDeRevision,
-  regenerarInforme,
-  verificarArchivo,
-} from "../datos/emision.js";
-import { crearRespaldo, restaurarRespaldo } from "../datos/respaldo.js";
-import {
-  informesLocales,
+  informesCompartidos,
   CARPETA_INFORMES,
 } from "../datos/informes-locales.js";
+let api = null;
 const repo = ref(null),
   compras = ref([]),
   filtroGestion = ref(null),
@@ -130,7 +123,9 @@ onMounted(async () => {
 });
 onMounted(() =>
   operacion(async () => {
-    repo.value = await abrirRepositorio();
+    const abierta = await abrirApi();
+    api = abierta.api;
+    repo.value = abierta.repo;
     await cargar();
   }),
 );
@@ -315,20 +310,14 @@ async function emitir() {
     const elegidas = comprasDelInforme.value.filter((c) =>
       informeSeleccion.value.includes(c.id),
     );
-    const items = [];
-    for (const compra of elegidas)
-      items.push({ compra, fotos: await repo.value.fotos(compra.id) });
-    const { registro } = await emitirInforme({
-      repo: repo.value,
-      files: archivos,
-      almacen: informesLocales,
-      gestion: g,
-      items,
+    const { informe: registro } = await api.informes.emitir({
+      alcance: { tipo: "gestion", gestion_id: g.id },
       opciones: {
         ...f,
         titulo: f.titulo.trim(),
         responsable: f.responsable.trim(),
         destinatario: f.destinatario.trim(),
+        compras: elegidas.map((c) => c.id),
       },
     });
     await repo.value.guardarAjustes({
@@ -350,19 +339,13 @@ async function emitir() {
   });
 }
 async function cargarInformes() {
-  const registros = await repo.value.informes();
-  const lista = [];
-  for (const r of registros)
-    lista.push({
-      ...r,
-      estado: await verificarArchivo(informesLocales, r),
-      nombre: gestiones.value.find((g) => g.id === r.gestion_id)?.nombre,
-    });
-  revisiones.value = lista;
-  const conRegistro = new Set(registros.map((r) => r.archivo));
-  informesSinRegistro.value = (await informesLocales.listar()).filter(
-    (n) => !conRegistro.has(n),
-  );
+  revisiones.value = (await api.informes.listar()).map((r) => ({
+    ...r,
+    estado:
+      r.privado_estado === "verificado" ? "verificado" : r.compartido_estado,
+    nombre: gestiones.value.find((g) => g.id === r.gestion_id)?.nombre,
+  }));
+  informesSinRegistro.value = await api.informes.sinRegistro();
 }
 async function abrirInformes() {
   await operacion(async () => {
@@ -378,18 +361,15 @@ const ESTADO_ARCHIVO = {
 };
 async function abrirRevision(r) {
   await operacion(async () => {
-    const bytes =
-      r.estado === "verificado"
-        ? await informesLocales.leer(r.archivo)
-        : await regenerarInforme(repo.value, archivos, r);
-    await compartir(`${r.codigo}.pdf`, bytes, "application/pdf");
+    const { bytes, nombre } = await api.informes.abrir(r.id);
+    await compartir(nombre, bytes, "application/pdf");
   });
 }
 async function excelRevision(r) {
   await operacion(async () => {
-    const bytes = await informeExcel(await modeloDeRevision(repo.value, r));
+    const { bytes, nombre } = await api.informes.excel(r.id);
     await compartir(
-      `${r.codigo}.xlsx`,
+      nombre,
       bytes,
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
@@ -406,7 +386,7 @@ const fechaVista = (iso) =>
   iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "";
 async function abrirInforme(nombre) {
   await operacion(async () => {
-    const bytes = await informesLocales.leer(nombre);
+    const bytes = await informesCompartidos.leer(nombre);
     await compartir(nombre, bytes, "application/pdf");
   });
 }
@@ -418,7 +398,7 @@ async function guardarEncabezado() {
 }
 async function respaldo() {
   await operacion(async () => {
-    const bytes = await crearRespaldo(repo.value, archivos);
+    const { bytes } = await api.respaldo.crear();
     await compartir(`respaldo-gastos-${hoy()}.zip`, bytes, "application/zip");
     mensaje.value = "Respaldo preparado. Guardalo en un lugar privado.";
   });
@@ -434,9 +414,7 @@ async function restaurar(event) {
   )
     return;
   await operacion(async () => {
-    const resultado = await restaurarRespaldo(
-      repo.value,
-      archivos,
+    const resultado = await api.respaldo.restaurar(
       new Uint8Array(await file.arrayBuffer()),
     );
     seleccion.value = null;
@@ -1072,11 +1050,10 @@ const nativo = Capacitor.isNativePlatform();
           /></label>
         </div>
         <p class="hint">
-          El respaldo incluye compras, fotos y el registro de cada informe
-          emitido con su huella: después de restaurar, cada revisión se puede
-          regenerar idéntica. No incluye los archivos PDF. No tiene contraseña
-          adicional: guardalo en un lugar privado. Restaurarlo reemplaza los
-          datos actuales.
+          El respaldo incluye compras, fotos, movimientos de dinero y la copia
+          privada de cada informe emitido, con sus huellas. No está cifrado ni
+          tiene contraseña: guardalo en un lugar privado. Restaurarlo reemplaza
+          los datos actuales.
         </p>
       </section>
       <p class="footer">

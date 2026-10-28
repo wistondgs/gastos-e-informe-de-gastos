@@ -18,6 +18,7 @@
 
 - Capacidad → criterio verificable → prueba → evidencia:
 - Pruebas de las pruebas, antes de la ejecución real:
+- Si hay PDF: ¿se rasterizó cada ejemplo y se miró página por página (E-09)? ¿Se buscaron contradicciones entre secciones y líneas sobre el texto?
 - Resultados por Android e iOS, cuando correspondan:
 
 ## 3. Cierre

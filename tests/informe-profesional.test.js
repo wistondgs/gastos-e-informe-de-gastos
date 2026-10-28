@@ -2,7 +2,10 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { PDFDocument } from "pdf-lib";
 import ExcelJS from "exceljs";
-import { prepararInforme, codigoInforme } from "../src/dominio/informe.js";
+import {
+  prepararInforme as preparar,
+  codigoInforme,
+} from "../src/dominio/informe.js";
 import { informePdf } from "../src/exportaciones/informe-pdf.js";
 import { informeExcel } from "../src/exportaciones/informe-excel.js";
 import {
@@ -18,6 +21,16 @@ const gestion = {
   fecha_inicio: "2026-10-20",
   fecha_fin: "2026-10-27",
 };
+const alcance = { tipo: "gestion", gestion_id: "gestion-1" };
+const prepararInforme = (g, items, opciones) =>
+  preparar(
+    {
+      alcance: { tipo: "gestion", gestion_id: g.id },
+      descripcion: { titulo: "", lineas: [["Gestión", g.nombre]] },
+      items,
+    },
+    opciones,
+  );
 const base = {
   titulo: "Rendición de gastos",
   responsable: "Winston D. Gutiérrez",
@@ -100,7 +113,7 @@ test("los totales van por moneda, cuadran con las filas y respetan el corte", as
       m.totales[mon].importe,
     );
   assert.deepEqual(m.monedas, ["NIO", "USD"]);
-  assert.equal(m.codigo, codigoInforme("gestion-1", 1));
+  assert.equal(m.codigo, codigoInforme(alcance, 1));
   assert.equal(m.codigo, "GR-GESTION1-R01");
 });
 test("los anexos se numeran en el orden de la tabla y la falta de imagen se informa", async () => {
@@ -150,7 +163,7 @@ test("rechaza compras ajenas, duplicadas, fotos cruzadas y cortes inválidos", a
     /moneda/,
   );
   assert.throws(
-    () => prepararInforme(gestion, items, { ...base, corte: "2026-10-19" }),
+    () => prepararInforme(gestion, items, { ...base, corte: "2026-13-01" }),
     /corte/,
   );
   assert.throws(
@@ -172,7 +185,8 @@ test("el PDF ejecutivo en Carta trae datos, tabla, totales separados y anexos", 
     doc.getPages().map((p) => [p.getWidth(), p.getHeight()]),
     Array(doc.getPageCount()).fill([612, 792]),
   );
-  assert.equal(doc.getPageCount(), 1 + 3);
+  // Resumen; la factura corta; la larga en 4 tramos; el voucher.
+  assert.equal(doc.getPageCount(), 1 + 1 + 4 + 1);
   assert.ok(todo.includes("Winston Managua"));
   assert.ok(todo.includes("GR-GESTION1-R01"));
   assert.ok(todo.includes("C$ 12,550.75"));
@@ -187,15 +201,19 @@ test("el PDF ejecutivo en Carta trae datos, tabla, totales separados y anexos", 
   assert.ok(todo.includes("A-02, A-03"));
   assert.ok(!todo.includes("Después del corte"));
   assert.equal(paginas[1][0], "ANEXO 01");
-  assert.equal(paginas[2][1], "Factura 0000124");
-  assert.equal(paginas[3][1], "Voucher 0000124");
-  paginas.forEach((p, i) => assert.ok(p.includes(`Página ${i + 1} de 4`)));
+  for (let parte = 1; parte <= 4; parte++) {
+    assert.equal(paginas[1 + parte][0], `ANEXO 02 · PARTE ${parte} DE 4`);
+    assert.equal(paginas[1 + parte][1], "Factura 0000124");
+  }
+  assert.equal(paginas[6][0], "ANEXO 03");
+  assert.equal(paginas[6][1], "Voucher 0000124");
+  paginas.forEach((p, i) => assert.ok(p.includes(`Página ${i + 1} de 7`)));
   assert.ok(
     !todo.some((t) => t.includes("W. D. Gutiérrez")),
     "sin la firma del desarrollador",
   );
   assert.ok(
-    todo.some((t) => t.includes("Liquidación del dinero: no calculada")),
+    todo.some((t) => t.includes("Liquidación del dinero: sin movimientos")),
   );
 });
 test("el modo formal en A4 trae el bloque de revisión y no tiene anexos sin fotos", async () => {
@@ -276,8 +294,8 @@ test("el Excel de la revisión trae los mismos totales, documento como texto y s
   );
   assert.ok(valores.some((v) => v[0] === "USD" && v[1] === 85 && v[2] === 1));
   assert.equal(hoja.rowCount, 1 + 4);
-  assert.equal(hoja.getRow(2).getCell(4).value, "0000123");
-  assert.equal(hoja.getRow(3).getCell(3).value, "'=HYPERLINK(1)");
+  assert.equal(hoja.getRow(2).getCell(5).value, "0000123");
+  assert.equal(hoja.getRow(3).getCell(4).value, "'=HYPERLINK(1)");
 });
 test("una compra en la fecha de corte entra en el informe", async () => {
   const { items } = await escenario();
@@ -295,4 +313,12 @@ test("el PDF no depende del reloj: la misma revisión da los mismos bytes otro d
   t.mock.timers.setTime(Date.UTC(2027, 2, 3, 10, 30));
   const b = await informePdf(m, files);
   assert.deepEqual(a, b);
+});
+test("el modelo rechaza una compra anulada aunque se la pasen", async () => {
+  const { items } = await escenario();
+  const anulada = {
+    ...items[2],
+    compra: { ...items[2].compra, anulada: "2026-10-25T00:00:00Z" },
+  };
+  assert.throws(() => prepararInforme(gestion, [anulada], base), /anulada/);
 });

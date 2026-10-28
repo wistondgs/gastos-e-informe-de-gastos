@@ -93,3 +93,5 @@
   - la prueba en Android de la migración 2→3 y de la carpeta Documentos, en una instalación aislada;
   - iOS, no probado;
   - el filtro automático por destinatario (paquete 5).
+
+> **Nota (27-10, orden V2):** los PDF de ejemplo de este paquete se reemplazaron por los del motor 2 (`ejemplo-1-gestion-ejecutivo-carta.pdf`, `ejemplo-2-destinatario-formal-a4.pdf`, `ejemplo-3-varias-gestiones-ejecutivo-a4.pdf`). Se conservan en el historial de git, en `1b34f88`. Ver `03-orden-ingenieria-v2.md`.

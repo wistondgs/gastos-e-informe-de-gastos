@@ -184,7 +184,7 @@ test("respaldo y restauración transaccional; corrupción y fallo preservan el e
   assert.equal((await repo.compras()).length, 2);
   const falloTransaccion = {
     ...repo,
-    async reemplazar() {
+    async reemplazarTodo() {
       await db.executeSet(
         [
           { statement: "DELETE FROM fotos", values: [] },
@@ -200,7 +200,13 @@ test("respaldo y restauración transaccional; corrupción y fallo preservan el e
   assert.equal((await repo.fotos(c.id)).length, 1);
   assert.equal(files.data.size, 1);
   const resultado = await restaurarRespaldo(repo, files, zip);
-  assert.deepEqual(resultado, { compras: 1, fotos: 1, informes: 0 });
+  assert.deepEqual(resultado, {
+    compras: 1,
+    fotos: 1,
+    informes: 0,
+    informes_con_archivo: 0,
+    movimientos: 0,
+  });
   assert.equal((await repo.compras()).length, 1);
   const foto = (await repo.fotos(c.id))[0];
   assert.deepEqual(await files.leer(foto.ruta), png);

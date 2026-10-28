@@ -4,7 +4,11 @@ android {
     namespace "io.necktral.gastos.entorno"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "io.necktral.gastos.entorno"
+        // -Ppruebas: instalación aislada (otro identificador y otra base), nunca la de datos reales.
+        def pruebas = project.hasProperty("pruebas")
+        applicationId "io.necktral.gastos.entorno" + (pruebas ? ".pruebas" : "")
+        manifestPlaceholders = [etiqueta: pruebas ? "Prueba beta de gastos" : "@string/app_name",
+                                etiquetaActividad: pruebas ? "Prueba beta de gastos" : "@string/title_activity_main"]
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 2
