@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "objective": "REEMPLAZAR_por_fase_existente_aprobada",
+  "approval_reference": "REEMPLAZAR_por_mandato_o_decision_verificable",
+  "repository_root": "/REEMPLAZAR/raiz/fisica/ERP_V4",
+  "branch": "REEMPLAZAR_por_rama_verificada",
+  "baseline_sha": "REEMPLAZAR_por_SHA_completo_verificado",
+  "role": "development",
+  "allowed_paths": [
+    "backend/erp/kernels/contabilidad/",
+    "backend/erp/plataforma/org/",
+    "backend/tests/kernels/contabilidad/",
+    "backend/erp/plataforma/org/tests/",
+    "BUGS.md",
+    "docs/modulos/contabilidad_bilateral.md"
+  ],
+  "forbidden_paths": [
+    "CLAUDE.md", "AGENTS.md", "ROADMAP.md", "LOG.md",
+    "backend/erp/kernels/inventarios/",
+    "backend/erp/plataforma/aprobaciones/",
+    "frontend/", "scripts/", "v4", "contracts/"
+  ],
+  "protected_roots": ["/home/wis/dev/fabrica_v4"],
+  "frozen_sha": null
+}

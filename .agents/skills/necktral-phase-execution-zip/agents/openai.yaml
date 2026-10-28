@@ -1,0 +1,7 @@
+interface:
+  display_name: "Necktral: ejecución por fases"
+  short_description: "Fases completas con autonomía y certificación rigurosa"
+  default_prompt: "Usa $necktral-phase-execution-zip para dirigir la fase aprobada de ERP V4, conservar sus controles y entregar READY_TO_CLOSE o BLOCKED."
+
+policy:
+  allow_implicit_invocation: false

@@ -1,4 +1,4 @@
-# Contrato de la API local · Gastos y Rendiciones V2
+# Contrato de la API local · Gastos e Informe de Gastos V2
 
 Para quien diseña la interfaz (Claude Design). La app no tiene servidor: estos «endpoints» son funciones de JavaScript que la interfaz llama dentro de la propia app. Funcionan **sin conexión**, sobre SQLite y los archivos privados del teléfono.
 
@@ -26,6 +26,10 @@ Todas las operaciones son `async`. En el navegador de desarrollo (`npm run dev`)
 | Nada se borra | Corregir es **anular con motivo** (de 3 a 300 caracteres) y registrar de nuevo. Lo anulado queda con su fecha (`anulada`) y un evento. |
 | Respuestas | Objetos simples, serializables a JSON. Los archivos vienen como `bytes` (`Uint8Array`). |
 
+Las operaciones financieras se coordinan en la conexión y validan sus saldos dentro de la misma transacción que sus escrituras. La identidad de un registro nuevo incluye una huella canónica de su solicitud completa, incluidos reparto y comprobantes; se guarda en auditoría junto al registro. Un reintento idéntico no duplica, y cualquier diferencia produce `CONFLICTO`. En operaciones históricas sin huella original no es posible verificar todo el contenido: reutilizar su identificador devuelve `CONFLICTO`, incluso si los campos visibles coinciden. No se modifican los registros históricos.
+
+En la versión de navegador, las ventanas comparten un bloqueo Web Locks y recargan la base persistida antes de operar. Si el navegador no ofrece Web Locks, la aplicación no abre la base: muestra un error en lugar de permitir escrituras simultáneas inseguras. Esta condición no afecta al adaptador SQLite nativo.
+
 ## Errores
 
 Toda operación que falla lanza un `ErrorApi` con `codigo`, `message` (en español, para mostrar) y, si aplica, `campo` (el dato a marcar en el formulario). `error.toJSON()` devuelve `{ codigo, mensaje, campo }`.
@@ -41,7 +45,7 @@ Toda operación que falla lanza un `ErrorApi` con `codigo`, `message` (en españ
 
 ## Identidad
 
-`api.identidad()` → `{ producto: "Gastos y Rendiciones", desarrollador: "W. D. Gutiérrez", firma: "Desarrollada por W. D. Gutiérrez", version }`. `version` es la de Android (`null` en el navegador). Es un metadato para Inicio y «Acerca de»; **nunca va en los informes**.
+`api.identidad()` → `{ producto: "Gastos e Informe de Gastos", desarrollador: "W Gutiérrez", firma: "Desarrollado por W Gutiérrez", version }`. `version` es la de Android (`null` en el navegador). Es un metadato para Inicio y «Acerca de»; **nunca va en los informes**.
 
 ## Personas y empresas (`api.partes`)
 
@@ -57,7 +61,7 @@ Toda operación que falla lanza un `ErrorApi` con `codigo`, `message` (en españ
 |---|---|---|
 | `crear({ id?, nombre, descripcion?, responsable_id?, fecha_inicio })` | `responsable_id`: una parte | `{ gestion, creada }` |
 | `listar({ estado? })` | `estado`: `"todas"`, `"abiertas"` o `"terminadas"` | Cada una con `estado` (`abierta`/`terminada`), `liquidacion` y `compras` (cantidad vigente) |
-| `detalle(id)` | | `{ gestion, compras, liquidacion, saldos, observaciones, eventos }` |
+| `detalle(id)` | | `{ gestion, compras, liquidacion, saldos, observaciones, eventos, historial }`. El historial reúne aplicaciones de fondos, compras, pagos, movimientos y eventos pertinentes. |
 | `cerrar(id, fecha)` | | `{ gestion }`. Terminar no borra ni liquida nada |
 | `reabrir(id, motivo)` | | `{ gestion }`. El evento guarda la fecha de cierre anterior |
 
@@ -99,6 +103,7 @@ En `pagos`, `asignacion` es el **índice** dentro de `asignaciones` de la misma 
 | `listar(filtros)` | `gestion_id` (`"ninguna"` = sin gestión), `desde`, `hasta`, `moneda`, `proveedor` (contiene, sin mayúsculas), `comprobante` (estado), `incluirAnuladas` | Compras más recientes primero |
 | `detalle(id)` | | `{ compra, fotos, anexos, asignaciones, pagos, eventos }` |
 | `anular(id, motivo)` | | `{ compra }`. Anula también sus pagos y su reparto vigentes |
+| `corregir(id, cambios, motivo)` | Solo `concepto`, `proveedor` y `factura` | `{ compra }`. Conserva los valores anteriores y nuevos en un evento; no altera importes, pagos ni identificador. |
 | `asignar(id, asignaciones, motivo?)` | Reparto nuevo completo | `{ asignaciones }`. El anterior queda anulado; el evento guarda el antes y el después. Si hay pagos imputados al reparto actual: `ESTADO` |
 | `clasificarPago(id, { forma_pago, deudor_id? }, motivo?)` | Solo para compras `sin_detalle` | `{ compra }`. Una sola vez |
 
@@ -196,10 +201,11 @@ Una revisión emitida no cambia nunca: una compra, un pago o un ajuste de anexo 
 
 | Operación | Devuelve |
 |---|---|
-| `crear()` | `{ bytes, cifrado: false }`: ZIP con la base, las fotos y las copias privadas de los informes, con manifiesto de huellas |
+| `crear()` | `{ bytes, cifrado: false }`: ZIP integral con la base, las fotos y las copias privadas esperadas de los informes, con manifiesto de huellas. Falta o alteración de un archivo esperado produce `INTEGRIDAD` y no entrega un ZIP. No se ofrecen respaldos parciales. Los informes históricos de motor 1 que nunca tuvieron copia privada se conservan como tales. |
 | `restaurar(bytes)` | `{ compras, fotos, informes, informes_con_archivo, movimientos }`. Valida todo antes de tocar nada (también las reglas de dinero); si algo falla, el estado anterior queda intacto |
 
 El respaldo **no está cifrado:** la pantalla debe decirlo y recomendar un destino privado. Restaurar reemplaza todos los datos: pedir confirmación. Acepta los respaldos de versiones anteriores.
+Un respaldo anterior que omitió una copia privada esperada no se considera completo y se rechaza antes de reemplazar los datos existentes.
 
 ## Lo que queda para la interfaz
 

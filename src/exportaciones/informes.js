@@ -1,7 +1,25 @@
 import ExcelJS from "exceljs";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb,
+  pushGraphicsState,
+  popGraphicsState,
+  rectangle,
+  clip,
+  endPath,
+  concatTransformationMatrix,
+  drawObject,
+} from "pdf-lib";
 import { bytesABase64, huella } from "../datos/archivos.js";
 import { dinero } from "../dominio/compra.js";
+import {
+  ajusteEfectivo,
+  dimensiones,
+  geometria,
+  orientacionExif,
+  planificarAnexos,
+} from "../documentos/anexos.js";
 async function imagenesVerificadas(fotos, files) {
   const resultado = [];
   for (const foto of fotos) {
@@ -90,7 +108,7 @@ function envolver(texto, font, size, maxWidth) {
   if (linea) lineas.push(linea);
   return lineas;
 }
-export async function pdf(compra, fotos, files, encabezado) {
+export async function pdf(compra, fotos, files, encabezado, ajustes = []) {
   const imagenes = await imagenesVerificadas(fotos, files);
   const doc = await PDFDocument.create();
   const regular = await doc.embedFont(StandardFonts.Helvetica),
@@ -132,20 +150,47 @@ export async function pdf(compra, fotos, files, encabezado) {
     y -= 12;
     linea("Sin comprobantes adjuntos.");
   }
-  for (const { foto, bytes } of imagenes) {
+  const preparados = imagenes.map(({ foto, bytes }) => ({
+    foto,
+    bytes,
+    dims: dimensiones(bytes, foto.tipo),
+    ajuste: ajusteEfectivo(
+      ajustes.find((a) => a.foto_id === foto.id),
+      orientacionExif(bytes, foto.tipo),
+    ),
+  }));
+  const paginasAnexos = preparados.flatMap((anexo) =>
+    planificarAnexos([anexo], { ancho: 499, alto: 720, cabecera: 40 }),
+  );
+  for (const colocaciones of paginasAnexos) {
     pagina();
-    linea(`Comprobante: ${foto.clase} · ${foto.id}`, negrita, 12);
-    const img =
-      foto.tipo === "image/png"
-        ? await doc.embedPng(bytes)
-        : await doc.embedJpg(bytes);
-    const scale = Math.min(499 / img.width, (y - 75) / img.height, 1);
-    page.drawImage(img, {
-      x: margin,
-      y: y - img.height * scale,
-      width: img.width * scale,
-      height: img.height * scale,
-    });
+    for (const { anexo, caja, cabeceraY, tramo } of colocaciones) {
+      const { foto, bytes } = anexo;
+      page.drawText(
+        `Comprobante: ${foto.clase}${tramo ? ` · Parte ${tramo.parte} de ${tramo.de}` : ""}`,
+        { x: margin, y: 65 + cabeceraY - 16, size: 11, font: negrita },
+      );
+      const img =
+        foto.tipo === "image/png"
+          ? await doc.embedPng(bytes)
+          : await doc.embedJpg(bytes);
+      const g = geometria(
+        anexo.dims,
+        anexo.ajuste,
+        { ...caja, x: margin + caja.x, y: 65 + caja.y },
+        tramo,
+      );
+      const nombre = page.node.newXObject("Image", img.ref);
+      page.pushOperators(
+        pushGraphicsState(),
+        rectangle(g.visible.x, g.visible.y, g.visible.w, g.visible.h),
+        clip(),
+        endPath(),
+        concatTransformationMatrix(...g.matriz),
+        drawObject(nombre),
+        popGraphicsState(),
+      );
+    }
   }
   const pages = doc.getPages();
   pages.forEach((p, i) =>

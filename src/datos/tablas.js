@@ -9,6 +9,10 @@ export const TABLAS = [
     columnas: ["id", "nombre", "tipo", "activa", "creada"],
   },
   {
+    nombre: "catalogos",
+    columnas: ["id", "tipo", "nombre", "activa", "creada"],
+  },
+  {
     nombre: "gestiones",
     columnas: [
       "id",
@@ -40,6 +44,10 @@ export const TABLAS = [
   {
     nombre: "fotos",
     columnas: ["id", "compra_id", "ruta", "tipo", "clase", "sha256"],
+  },
+  {
+    nombre: "catalogo_usos",
+    columnas: ["id", "catalogo_id", "compra_id", "tipo", "nombre"],
   },
   {
     nombre: "anexos",

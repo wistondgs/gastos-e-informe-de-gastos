@@ -2,6 +2,7 @@ import JSZip from "jszip";
 import { huella } from "./archivos.js";
 import { validarCompra } from "../dominio/compra.js";
 import { validarGestion } from "../dominio/gestion.js";
+import { validarCatalogo } from "../dominio/catalogos.js";
 import { verificarImagen } from "../dominio/operaciones.js";
 import { calcularSaldos, validarParte } from "../dominio/finanzas.js";
 import { validarAjusteAnexo } from "../documentos/anexos.js";
@@ -29,8 +30,7 @@ const sinPdf = {
 export async function crearRespaldo(repo, files, privados = sinPdf) {
   const tablas = await repo.cargarTodo();
   const zip = new JSZip();
-  const archivos = {},
-    omitidos = [];
+  const archivos = {};
   for (const f of tablas.fotos) {
     const bytes = await files.leer(f.ruta);
     verificarImagen(bytes, f.tipo);
@@ -40,15 +40,25 @@ export async function crearRespaldo(repo, files, privados = sinPdf) {
     archivos[`imagenes/${f.id}`] = f.sha256;
   }
   for (const i of tablas.informes) {
+    // Las revisiones migradas desde el esquema anterior nunca tuvieron copia
+    // privada; una ruta existente, en cambio, obliga a verificarla.
+    if (!i.privado) {
+      if (i.motor !== 1)
+        throw new Error(
+          "Falta un informe privado esperado; no se creó el respaldo.",
+        );
+      continue;
+    }
     const ruta = `informes/${i.sha256}.pdf`;
-    if (archivos[ruta]) continue;
     try {
       const bytes = await privados.leer(i.privado);
       if ((await huella(bytes)) !== i.sha256) throw new Error("alterado");
       zip.file(ruta, bytes);
       archivos[ruta] = i.sha256;
     } catch {
-      omitidos.push(i.id);
+      throw new Error(
+        "Falta o está alterado un informe privado; no se creó el respaldo.",
+      );
     }
   }
   const json = encoder.encode(
@@ -61,7 +71,7 @@ export async function crearRespaldo(repo, files, privados = sinPdf) {
       version: 2,
       datos: await huella(json),
       archivos,
-      informes_omitidos: omitidos,
+      informes_omitidos: [],
     }),
   );
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
@@ -137,9 +147,24 @@ function validarTablas(t) {
   }
   validarAjustes(Object.fromEntries(t.ajustes.map((a) => [a.clave, a.valor])));
   t.partes.forEach(validarParte);
+  t.catalogos.forEach(validarCatalogo);
   t.gestiones.forEach(validarGestion);
   t.compras.forEach(validarCompra);
   const compras = new Set(t.compras.map((c) => c.id));
+  const catalogos = new Map(t.catalogos.map((c) => [c.id, c]));
+  for (const u of t.catalogo_usos) {
+    const catalogo = catalogos.get(u.catalogo_id);
+    if (
+      !ID.test(u.id) ||
+      !catalogo ||
+      catalogo.tipo !== u.tipo ||
+      !compras.has(u.compra_id) ||
+      typeof u.nombre !== "string" ||
+      !u.nombre.trim() ||
+      u.nombre.length > 120
+    )
+      throw new Error("Una referencia de catálogo del respaldo es inválida.");
+  }
   for (const f of t.fotos)
     if (
       !ID.test(f.id) ||
@@ -244,13 +269,44 @@ export async function restaurarRespaldo(
   const pdfs = new Map();
   for (const i of tablas.informes) {
     const ruta = `informes/${i.sha256}.pdf`;
-    if (man.version === 1 || !man.archivos[ruta]) continue;
+    if (man.version === 1) {
+      if (i.privado || i.motor !== 1)
+        throw new Error("Falta un informe privado en el respaldo.");
+      continue;
+    }
+    if (!man.archivos[ruta]) {
+      if (i.privado || i.motor !== 1)
+        throw new Error("Falta un informe privado en el respaldo.");
+      continue;
+    }
+    if (man.archivos[ruta] !== i.sha256)
+      throw new Error("La huella de un informe no coincide con el manifiesto.");
     if (!pdfs.has(i.sha256)) {
       const contenido = await leer(ruta);
       if ((await huella(contenido)) !== i.sha256)
         throw new Error("Un informe del respaldo está alterado.");
       pdfs.set(i.sha256, contenido);
     }
+  }
+  if (man.version === 2) {
+    const rutasEsperadas = new Set(
+      [...pdfs.keys()].map((h) => `informes/${h}.pdf`),
+    );
+    const rutasManifestadas = Object.keys(man.archivos).filter((k) =>
+      k.startsWith("informes/"),
+    );
+    const rutasEnZip = Object.keys(zip.files).filter(
+      (k) => k.startsWith("informes/") && !zip.files[k].dir,
+    );
+    if (
+      rutasManifestadas.length !== rutasEsperadas.size ||
+      rutasEnZip.length !== rutasEsperadas.size ||
+      rutasManifestadas.some((r) => !rutasEsperadas.has(r)) ||
+      rutasEnZip.some((r) => !rutasEsperadas.has(r))
+    )
+      throw new Error(
+        "El manifiesto de informes no coincide con los archivos.",
+      );
   }
   const fotosAnteriores = await repo.todas("fotos");
   const informesAnteriores = await repo.todas("informes");

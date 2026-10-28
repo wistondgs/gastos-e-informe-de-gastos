@@ -21,7 +21,7 @@ import {
   planificarAnexos,
 } from "../documentos/anexos.js";
 /** Versión del motor: con el mismo motor y el mismo modelo, los mismos bytes. */
-export const MOTOR_PDF = 2;
+export const MOTOR_PDF = 3;
 const NOMBRE_MONEDA = { NIO: "Córdobas", USD: "Dólares" };
 const ESTADO_SOPORTE = {
   presente: "Presentes",
@@ -132,8 +132,8 @@ export async function informePdf(modelo, files) {
   const fecha = new Date(o.generado);
   doc.setTitle(`${o.titulo} · ${modelo.codigo}`);
   doc.setSubject(TIPOS_INFORME[modelo.tipo].nombre);
-  doc.setProducer("Gastos y Rendiciones");
-  doc.setCreator("Gastos y Rendiciones");
+  doc.setProducer("Gastos e Informe de Gastos");
+  doc.setCreator("Gastos e Informe de Gastos");
   doc.setCreationDate(fecha);
   doc.setModificationDate(fecha);
   const regular = await doc.embedFont(StandardFonts.Helvetica),

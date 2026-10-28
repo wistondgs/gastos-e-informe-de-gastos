@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Desbloquear la aplicación con Face ID cuando activés la protección.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Tomar fotos de comprobantes de compras.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

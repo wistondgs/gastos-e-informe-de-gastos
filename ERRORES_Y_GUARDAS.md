@@ -121,6 +121,50 @@
 
 ---
 
+## E-10 · La primera prueba de respaldo falló antes de llegar al defecto
+**Clase:** instrumento · **Veces que saltó:** 1 · El ejemplo de informe no incluía el título obligatorio.
+**2026-10-27, fase C1 (error de Codex).** La primera ejecución de `tests/integridad-c1.test.js` falló por `VALIDACION` del título en lugar de comprobar la falta de PDF. Se corrigió el ejemplo y se volvió a ejecutar contra el código previo; entonces falló por ausencia de rechazo, como se pretendía.
+**Por qué.** Se construyó la preparación del caso sin copiar todas las opciones obligatorias de un ejemplo existente.
+**Severidad.** Evidencia inicial engañosa y tiempo de verificación; únicamente datos sintéticos.
+**Firma (cómo se detecta).** El caso negativo falla en la preparación con un campo inválido, antes de ejecutar la acción que debe comprobar.
+**Guarda** `[MECÁNICA]`: el caso de `tests/integridad-c1.test.js` primero exige emitir correctamente el informe y luego exige el error de integridad al crear el respaldo; si falta el título falla antes de la aserción.
+**Aplicada en:** `tests/integridad-c1.test.js`, prueba C1-03. Mutante observado: omitir el título produce el error de validación mencionado.
+
+---
+
+## E-11 · Se eliminó el aviso visible de operación realizada
+**Clase:** instrumento · **Veces que saltó:** 1 · La interfaz seguía preparando mensajes de éxito, pero no los mostraba.
+**2026-10-28, integración V2 (error de Codex).** Se detectó al revisar `App.vue`: `mensaje.value` se asignaba al guardar, pero la plantilla ya no contenía un elemento con `role="status"`.
+**Por qué.** Al retirar un aviso duplicado en la fase anterior se retiró también el único aviso que debía quedar, sin una aserción que lo exigiera.
+**Severidad.** Confusión sobre el resultado de operaciones; sin modificación de datos.
+**Firma (cómo se detecta).** Hay asignaciones a `mensaje.value` sin una presentación visible y accesible de ese estado.
+**Guarda** `[MECÁNICA]`: `tests/arranque.test.js` exige el aviso condicional con `role="status"` en la plantilla. Mutante observado: la plantilla sin ese aviso incumple la aserción.
+**Aplicada en:** `src/interfaz/App.vue` y `tests/arranque.test.js`.
+
+---
+
+## E-12 · El historial mezcló eventos de entidades con el mismo identificador
+**Clase:** criterio · **Veces que saltó:** 1 · Se filtraban eventos solo por el texto del identificador.
+**2026-10-28, integración V2 (error de Codex).** La prueba `tests/historial-financiero.test.js` creó una gestión y una compra ajena con el mismo ID y detectó el evento de la compra en el historial de la gestión.
+**Por qué.** Se supuso que los identificadores eran globalmente únicos, aunque son claves de tablas distintas.
+**Severidad.** Presentación de información ajena en el historial; la prueba usó datos sintéticos.
+**Firma (cómo se detecta).** Una compra y una gestión de contextos diferentes comparten ID y aparece un evento de la compra en el historial de esa gestión.
+**Guarda** `[MECÁNICA]`: identificar cada evento por par entidad e ID y ejecutar el caso con IDs iguales en `tests/historial-financiero.test.js`. Mutante observado: filtrar solo por ID produce el fallo anterior.
+**Aplicada en:** `src/api/index.js`, `gestiones.detalle`, y la prueba indicada.
+
+---
+
+## E-13 · Una prueba del PDF pasó por cambiar la fecha interna, no por aplicar el ajuste
+**Clase:** instrumento · **Veces que saltó:** 1 · Comparar la huella completa de dos PDF daba una diferencia aunque el dibujo fuera idéntico.
+**2026-10-28, integración del editor (error de Codex).** La primera versión de `tests/editor-integracion.test.js` pasó con el exportador sin soporte de ajustes. Al comparar las matrices del contenido de la página se comprobó que las dos eran iguales; después de implementar la transformación, difieren.
+**Por qué.** Se compararon bytes globales de un documento que incluye metadatos variables en lugar de la propiedad visual buscada.
+**Severidad.** Prueba falsamente positiva de una función de comprobantes; sin datos reales.
+**Firma (cómo se detecta).** La prueba dice que cambió el PDF mientras el exportador todavía ignora el argumento de ajuste.
+**Guarda** `[MECÁNICA]`: `tests/editor-integracion.test.js` compara las matrices de transformación de la página y comprueba también la huella de la foto original. Mutante observado: el exportador sin ajustes deja las matrices iguales y falla.
+**Aplicada en:** `tests/editor-integracion.test.js` y `src/exportaciones/informes.js`.
+
+---
+
 ## Ejes no vigilados (agujeros declarados)
 
 *Un registro sin eventos pero con ejes no vigilados no es un certificado de salud: es un certificado con agujeros declarados.*

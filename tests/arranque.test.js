@@ -11,6 +11,7 @@ test("la pantalla inicial se puede compilar y contiene el aviso del entorno", as
   const { descriptor, errors } = parse(fuente, { filename: "App.vue" });
   assert.deepEqual(errors, []);
   assert.ok(descriptor.template);
+  assert.match(descriptor.template.content, /v-if="mensaje"[^>]*role="status"/);
   const resultado = compileTemplate({
     source: descriptor.template.content,
     filename: "App.vue",

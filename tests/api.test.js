@@ -476,8 +476,8 @@ test("la API solo entrega ErrorApi, objetos serializables y la identidad del pro
   const detalle = await api.gestiones.detalle("g1");
   assert.deepEqual(JSON.parse(JSON.stringify(detalle)), detalle);
   const id = await api.identidad();
-  assert.equal(id.firma, "Desarrollada por W. D. Gutiérrez");
-  assert.equal(id.producto, "Gastos y Rendiciones");
+  assert.equal(id.firma, "Desarrollado por W Gutiérrez");
+  assert.equal(id.producto, "Gastos e Informe de Gastos");
   const { bytes } = await api.informes.emitir({
     alcance: { tipo: "gestion", gestion_id: "g1" },
     opciones,

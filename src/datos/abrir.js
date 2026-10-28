@@ -22,6 +22,7 @@ export async function abrirRepositorio() {
     const { abrirWeb } = await import("./web-sqlite.js");
     db = await abrirWeb();
   }
-  await inicializar(db);
+  if (db.exclusiva) await db.exclusiva(() => inicializar(db));
+  else await inicializar(db);
   return repositorio(db);
 }

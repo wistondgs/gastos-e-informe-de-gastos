@@ -1,8 +1,10 @@
 <script setup>
-import { ref, computed, onMounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
 import { Camera, CameraResultType, CameraSource } from "@capacitor/camera";
 import { Capacitor } from "@capacitor/core";
 import { App as Aplicacion } from "@capacitor/app";
+import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
+import { crearProteccion } from "./proteccion.js";
 import { versionInstalada } from "./version.js";
 import { abrirApi } from "../api/dispositivo.js";
 import {
@@ -13,25 +15,128 @@ import {
   huella,
 } from "../datos/archivos.js";
 import { centavos, dinero } from "../dominio/compra.js";
-import { guardarCompra, verificarImagen } from "../dominio/operaciones.js";
+import { verificarImagen } from "../dominio/operaciones.js";
+import {
+  prepararCompraFinanciera,
+  prepararAplicaciones,
+} from "./flujo-financiero.js";
+import EditorComprobante from "./EditorComprobante.vue";
+import { crearBorradores } from "../datos/borradores.js";
 import { excel, pdf } from "../exportaciones/informes.js";
 import {
   informesCompartidos,
   CARPETA_INFORMES,
 } from "../datos/informes-locales.js";
 let api = null;
+let escuchadorEstado = null;
+let escuchadorAtras = null;
+const historialPantallas = [];
+let autenticando = false;
+let borradorHabilitado = false;
+let pausaBorrador = false;
+let temporizadorBorrador = null;
+const borradores = crearBorradores();
+const nativo = Capacitor.isNativePlatform();
+const proteccion = crearProteccion({
+  nativo,
+  sistema: BiometricAuth,
+  storage: localStorage,
+});
+const nuevoPago = () => ({
+  tipo: "sin_detalle",
+  parte_id: "",
+  fondo: "",
+  forma_pago: "contado",
+  deudor_id: "",
+  asignaciones: [],
+  pagos: [],
+});
 const repo = ref(null),
+  bloqueada = ref(proteccion.activa()),
+  seguridadActiva = ref(proteccion.activa()),
   compras = ref([]),
   filtroGestion = ref(null),
   gestiones = ref([]),
+  partes = ref([]),
+  partesTodas = ref([]),
+  parteEdicion = ref({ id: "", nombre: "", motivo: "" }),
+  parteDetalle = ref(null),
+  catalogos = ref([]),
+  catalogoForm = ref({ tipo: "cuenta", nombre: "" }),
+  catalogoEdicion = ref({ id: "", nombre: "", motivo: "" }),
+  desactivarParte = ref({ id: "", motivo: "" }),
+  saldos = ref([]),
+  recepciones = ref([]),
+  repartoIngreso = ref([]),
+  aplicarIngreso = ref({
+    id: "",
+    aplicacion_id: crypto.randomUUID(),
+    gestion_id: "",
+    monto: "",
+    destino: "anticipo",
+  }),
+  nombreParte = ref(""),
+  tipoParte = ref("persona"),
+  ingreso = ref({
+    id: crypto.randomUUID(),
+    gestion_id: "",
+    parte_id: "",
+    fecha: "",
+    monto: "",
+    moneda: "NIO",
+    referencia: "",
+    destino: "anticipo",
+  }),
+  movimiento = ref({
+    id: crypto.randomUUID(),
+    tipo: "devolucion",
+    gestion_id: "",
+    gestion_destino_id: "",
+    parte_id: "",
+    fecha: "",
+    monto: "",
+    moneda: "NIO",
+  }),
+  pago = ref(nuevoPago()),
   estadoHistorial = ref("todas"),
   nombreGestion = ref(""),
   inicioGestion = ref(""),
   cierreId = ref(null),
   fechaCierre = ref(""),
   seleccion = ref(null),
+  detalleCompra = ref(null),
+  abono = ref({
+    id: crypto.randomUUID(),
+    fecha: "",
+    monto: "",
+    origen: "tercero",
+    parte_id: "",
+    asignacion_id: "",
+  }),
+  motivoCompra = ref(""),
+  correccionCompra = ref({
+    visible: false,
+    concepto: "",
+    proveedor: "",
+    factura: "",
+    motivo: "",
+  }),
+  correccionEconomica = ref({
+    visible: false,
+    id: "",
+    monto: "",
+    moneda: "NIO",
+    motivo: "",
+  }),
+  motivoReparto = ref(""),
+  clasificacion = ref({ forma_pago: "contado", deudor_id: "" }),
+  reapertura = ref({ id: "", motivo: "" }),
+  anulacionMovimiento = ref({ tipo: "", id: "", motivo: "" }),
+  gestionDetalle = ref(null),
   fotos = ref([]),
   vistas = ref([]),
+  editor = ref(null),
+  claseNuevoComprobante = ref("factura"),
   imagenes = ref([]),
   error = ref(""),
   mensaje = ref(""),
@@ -42,15 +147,44 @@ const repo = ref(null),
   version = ref("Consultando…"),
   ajustes = ref({ encabezado: "", responsable: "", destinatario: "" }),
   informeGestion = ref(null),
+  informeGeneral = ref({
+    tipo: "periodo",
+    desde: "",
+    hasta: "",
+    parte_id: "",
+    gestion_ids: [],
+    titulo: "Informe de gastos",
+    corte: "",
+    responsable: "",
+    destinatario: "",
+    papel: "carta",
+    estilo: "ejecutivo",
+    incluirFotos: true,
+    incluirCompartidos: false,
+  }),
   informeForm = ref({}),
   informeSeleccion = ref([]),
   revisiones = ref([]),
   informesSinRegistro = ref([]);
 function ir(destino) {
+  if (destino !== pantalla.value) historialPantallas.push(pantalla.value);
   pantalla.value = destino;
   error.value = "";
   mensaje.value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+function atras() {
+  if (editor.value) {
+    editor.value = null;
+    return;
+  }
+  if (pantalla.value === "registro" && paso.value > 1) {
+    retroceder();
+    return;
+  }
+  const destino = historialPantallas.pop();
+  if (destino) pantalla.value = destino;
+  else if (nativo) Aplicacion.exitApp();
 }
 const gestionesVisibles = computed(() =>
   gestiones.value.filter(
@@ -67,6 +201,36 @@ const comprasVisibles = computed(() =>
 function verCompras(id) {
   filtroGestion.value = id;
   ir("compras");
+}
+function abrirHistorial(h) {
+  const historial = gestionDetalle.value?.historial || [];
+  const compraId =
+    h.tipo === "compra"
+      ? h.id
+      : h.compra_id ||
+        (h.entidad === "compra" ? h.entidad_id : null) ||
+        (h.entidad === "pago"
+          ? historial.find((p) => p.tipo === "pago" && p.id === h.entidad_id)
+              ?.compra_id
+          : null);
+  if (compraId) {
+    const compra = compras.value.find((c) => c.id === compraId);
+    if (compra) ver(compra);
+    return;
+  }
+  if (h.recepcion_id || h.entidad === "recepcion" || h.entidad === "aplicacion")
+    ir("fondos");
+  else if (h.tipo === "traslado" && h.gestion_destino_id)
+    verGestion(h.gestion_destino_id);
+}
+function tieneReferencia(h) {
+  return (
+    h.tipo === "compra" ||
+    !!h.compra_id ||
+    ["compra", "pago", "recepcion", "aplicacion"].includes(h.entidad) ||
+    !!h.recepcion_id ||
+    (h.tipo === "traslado" && !!h.gestion_destino_id)
+  );
 }
 function todasLasCompras() {
   filtroGestion.value = null;
@@ -87,8 +251,44 @@ const nuevo = () => ({
   factura: "",
   estado: "pendiente",
   gestion_id: "",
+  catalogos: [],
 });
 const form = ref(nuevo());
+function datosBorrador() {
+  return {
+    form: JSON.parse(JSON.stringify(form.value)),
+    pago: JSON.parse(JSON.stringify(pago.value)),
+    paso: paso.value,
+    imagenes: imagenes.value.map((imagen) => ({
+      ...JSON.parse(
+        JSON.stringify({
+          tipo: imagen.tipo,
+          clase: imagen.clase,
+          ajuste: imagen.ajuste,
+        }),
+      ),
+      bytes: Uint8Array.from(imagen.bytes),
+    })),
+  };
+}
+async function guardarBorrador() {
+  if (!borradorHabilitado || pausaBorrador) return;
+  try {
+    await borradores.guardar("compra", datosBorrador());
+  } catch {
+    error.value =
+      "No se pudo guardar el borrador. Conservá la aplicación abierta y revisá el almacenamiento.";
+  }
+}
+watch(
+  [form, pago, paso, imagenes],
+  () => {
+    if (!borradorHabilitado || pausaBorrador) return;
+    clearTimeout(temporizadorBorrador);
+    temporizadorBorrador = setTimeout(guardarBorrador, 250);
+  },
+  { deep: true, flush: "sync" },
+);
 async function operacion(fn) {
   if (ocupado.value) return;
   ocupado.value = true;
@@ -105,6 +305,16 @@ async function operacion(fn) {
 async function cargar() {
   compras.value = await repo.value.compras();
   gestiones.value = await repo.value.gestiones();
+  partesTodas.value = await api.partes.listar({ incluirInactivas: true });
+  partes.value = partesTodas.value.filter((p) => p.activa === 1);
+  catalogos.value = await api.catalogos.listar({ incluirInactivos: true });
+  saldos.value = (await api.saldos.consultar()).saldos;
+  recepciones.value = await api.fondos.recepciones();
+  if (!ingreso.value.fecha) ingreso.value.fecha = hoy();
+  if (!movimiento.value.fecha) movimiento.value.fecha = hoy();
+  if (!abono.value.fecha) abono.value.fecha = hoy();
+  if (!informeGeneral.value.corte) informeGeneral.value.corte = hoy();
+  if (!informeGeneral.value.hasta) informeGeneral.value.hasta = hoy();
   if (!inicioGestion.value) inicioGestion.value = hoy();
   ajustes.value = await repo.value.ajustes();
   encabezado.value = ajustes.value.encabezado;
@@ -116,19 +326,279 @@ async function cargar() {
       : [];
   }
 }
+function alcanceGeneral() {
+  const f = informeGeneral.value;
+  if (f.tipo === "periodo")
+    return { tipo: "periodo", desde: f.desde, hasta: f.hasta };
+  if (f.tipo === "parte") return { tipo: "parte", parte_id: f.parte_id };
+  if (f.tipo === "gestiones")
+    return { tipo: "gestiones", gestion_ids: f.gestion_ids };
+  return { tipo: "pendientes" };
+}
+function opcionesGeneral() {
+  const f = informeGeneral.value;
+  return {
+    titulo: f.titulo,
+    corte: f.corte,
+    responsable: f.responsable,
+    destinatario: f.destinatario,
+    papel: f.papel,
+    estilo: f.estilo,
+    incluirFotos: f.incluirFotos,
+    incluirCompartidos: f.incluirCompartidos,
+  };
+}
+async function informeGeneralAccion(vistaPrevia) {
+  await operacion(async () => {
+    const entrada = { alcance: alcanceGeneral(), opciones: opcionesGeneral() };
+    if (vistaPrevia) {
+      const r = await api.informes.previsualizar(entrada);
+      await compartir(
+        `vista-previa-${r.codigo}.pdf`,
+        r.bytes,
+        "application/pdf",
+      );
+      mensaje.value = `Vista previa: ${r.filas} compras y ${r.anexos} anexos; no se emitió una revisión.`;
+    } else {
+      const { informe } = await api.informes.emitir(entrada);
+      await cargarInformes();
+      ir("informes");
+      mensaje.value = `Informe ${informe.codigo} emitido.`;
+    }
+  });
+}
+async function crearParte() {
+  await operacion(async () => {
+    const { parte } = await api.partes.crear({
+      nombre: nombreParte.value,
+      tipo: tipoParte.value,
+    });
+    nombreParte.value = "";
+    await cargar();
+    ingreso.value.parte_id = parte.id;
+    pago.value.parte_id = parte.id;
+    mensaje.value = "Persona o empresa guardada.";
+  });
+}
+async function desactivarPersona() {
+  await operacion(async () => {
+    await api.partes.desactivar(
+      desactivarParte.value.id,
+      desactivarParte.value.motivo,
+    );
+    desactivarParte.value = { id: "", motivo: "" };
+    await cargar();
+    mensaje.value = "Persona o empresa desactivada; su historia se conserva.";
+  });
+}
+async function guardarParteEditada() {
+  await operacion(async () => {
+    const p = parteEdicion.value;
+    await api.partes.editar(p.id, { nombre: p.nombre }, p.motivo);
+    parteEdicion.value = { id: "", nombre: "", motivo: "" };
+    await cargar();
+    mensaje.value =
+      "Nombre actualizado; la referencia y su historial se conservan.";
+  });
+}
+async function mostrarRoles(id) {
+  await operacion(async () => {
+    parteDetalle.value = await api.partes.detalle(id);
+  });
+}
+async function crearCatalogo() {
+  await operacion(async () => {
+    await api.catalogos.crear(catalogoForm.value);
+    catalogoForm.value.nombre = "";
+    await cargar();
+    mensaje.value = "Elemento guardado.";
+  });
+}
+async function editarCatalogo() {
+  await operacion(async () => {
+    const c = catalogoEdicion.value;
+    await api.catalogos.editar(c.id, { nombre: c.nombre }, c.motivo);
+    catalogoEdicion.value = { id: "", nombre: "", motivo: "" };
+    await cargar();
+    mensaje.value = "Elemento actualizado.";
+  });
+}
+async function desactivarCatalogo(item) {
+  const motivo = prompt(
+    "Indicá el motivo de desactivación (al menos 3 caracteres):",
+  );
+  if (motivo === null) return;
+  await operacion(async () => {
+    await api.catalogos.desactivar(item.id, motivo);
+    await cargar();
+    mensaje.value = "Elemento desactivado; su historia se conserva.";
+  });
+}
+async function recibirDinero() {
+  await operacion(async () => {
+    const i = ingreso.value;
+    const importe = centavos(i.monto);
+    await api.fondos.recibir({
+      id: i.id,
+      fecha: i.fecha,
+      parte_id: i.parte_id,
+      importe,
+      moneda: i.moneda,
+      referencia: i.referencia,
+      aplicaciones: prepararAplicaciones(repartoIngreso.value),
+    });
+    i.monto = "";
+    i.referencia = "";
+    repartoIngreso.value = [];
+    i.id = crypto.randomUUID();
+    await cargar();
+    mensaje.value =
+      i.destino === "anticipo"
+        ? "Dinero recibido. Revisá el importe asignado y el que queda sin aplicar."
+        : "Reembolso registrado en la gestión.";
+  });
+}
+async function aplicarDinero() {
+  await operacion(async () => {
+    const a = aplicarIngreso.value;
+    await api.fondos.aplicar(
+      a.id,
+      prepararAplicaciones([
+        {
+          id: a.aplicacion_id,
+          gestion_id: a.gestion_id,
+          monto: a.monto,
+          destino: a.destino,
+        },
+      ]),
+    );
+    a.id = "";
+    a.monto = "";
+    a.aplicacion_id = crypto.randomUUID();
+    await cargar();
+    mensaje.value = "Dinero aplicado a la gestión.";
+  });
+}
+async function anularMovimiento() {
+  await operacion(async () => {
+    const a = anulacionMovimiento.value;
+    if (a.tipo === "pago") await api.pagos.anular(a.id, a.motivo);
+    else await api.fondos.anular(a.tipo, a.id, a.motivo);
+    anulacionMovimiento.value = { tipo: "", id: "", motivo: "" };
+    await cargar();
+    if (gestionDetalle.value)
+      gestionDetalle.value = await api.gestiones.detalle(
+        gestionDetalle.value.gestion.id,
+      );
+    if (seleccion.value) await actualizarDetalle();
+    mensaje.value = "Operación anulada; se conserva su historial.";
+  });
+}
+function elegirAnulacion(tipo, id) {
+  anulacionMovimiento.value = { tipo, id, motivo: "" };
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+async function registrarMovimiento() {
+  await operacion(async () => {
+    const m = movimiento.value;
+    const datos = {
+      id: m.id,
+      gestion_id: m.gestion_id,
+      parte_id: m.parte_id,
+      fecha: m.fecha,
+      importe: centavos(m.monto),
+      moneda: m.moneda,
+    };
+    if (m.tipo === "traslado")
+      await api.fondos.trasladar({
+        ...datos,
+        gestion_destino_id: m.gestion_destino_id,
+      });
+    else await api.fondos.devolver(datos);
+    m.monto = "";
+    m.id = crypto.randomUUID();
+    await cargar();
+    mensaje.value =
+      m.tipo === "traslado" ? "Traslado registrado." : "Devolución registrada.";
+  });
+}
 onMounted(async () => {
   version.value = await versionInstalada(Capacitor.isNativePlatform(), () =>
     Aplicacion.getInfo(),
   );
 });
-onMounted(() =>
-  operacion(async () => {
-    const abierta = await abrirApi();
-    api = abierta.api;
-    repo.value = abierta.repo;
-    await cargar();
-  }),
-);
+async function iniciarDatos() {
+  const abierta = await abrirApi();
+  api = abierta.api;
+  repo.value = abierta.repo;
+  try {
+    const recuperado = await borradores.obtener("compra");
+    if (recuperado) {
+      form.value = recuperado.form;
+      form.value.catalogos ||= [];
+      pago.value = { ...nuevoPago(), ...recuperado.pago };
+      paso.value = recuperado.paso;
+      imagenes.value = recuperado.imagenes;
+      mensaje.value = "Recuperamos el borrador de tu compra.";
+    }
+    borradorHabilitado = true;
+  } catch {
+    error.value =
+      "No se puede acceder a los borradores. Podés consultar tus datos, pero el registro temporal no se conservará al cerrar.";
+  }
+  await cargar();
+}
+async function desbloquear() {
+  await operacion(async () => {
+    autenticando = true;
+    try {
+      await proteccion.autenticar();
+    } finally {
+      autenticando = false;
+    }
+    if (!repo.value) await iniciarDatos();
+    bloqueada.value = false;
+  });
+}
+async function cambiarSeguridad() {
+  await operacion(async () => {
+    autenticando = true;
+    try {
+      if (seguridadActiva.value) await proteccion.desactivar();
+      else await proteccion.activar();
+    } finally {
+      autenticando = false;
+    }
+    seguridadActiva.value = proteccion.activa();
+    mensaje.value = seguridadActiva.value
+      ? "Protección activada."
+      : "Protección desactivada.";
+  });
+}
+onMounted(() => {
+  if (bloqueada.value) desbloquear();
+  else operacion(iniciarDatos);
+});
+onMounted(async () => {
+  if (nativo)
+    escuchadorEstado = await Aplicacion.addListener(
+      "appStateChange",
+      ({ isActive }) => {
+        if (!isActive) {
+          clearTimeout(temporizadorBorrador);
+          guardarBorrador();
+          if (seguridadActiva.value && !autenticando) bloqueada.value = true;
+        }
+      },
+    );
+  if (nativo)
+    escuchadorAtras = await Aplicacion.addListener("backButton", atras);
+});
+onUnmounted(() => {
+  escuchadorEstado?.remove();
+  escuchadorAtras?.remove();
+  clearTimeout(temporizadorBorrador);
+});
 function tipoDe(bytes) {
   return bytes[0] === 137 ? "image/png" : "image/jpeg";
 }
@@ -157,6 +627,89 @@ async function camara() {
     await agregar(base64ABytes(base64));
   });
 }
+function editarBorrador(indice) {
+  const imagen = imagenes.value[indice];
+  editor.value = {
+    tipo: "borrador",
+    indice,
+    src: `data:${imagen.tipo};base64,${bytesABase64(imagen.bytes)}`,
+    ajuste: imagen.ajuste || {},
+  };
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+async function editarGuardado(vista) {
+  await operacion(async () => {
+    const { anexo } = await api.anexos.obtener(vista.id);
+    editor.value = {
+      tipo: "guardada",
+      id: vista.id,
+      src: vista.src,
+      ajuste: anexo,
+    };
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+}
+async function guardarAjusteImagen(ajuste) {
+  await operacion(async () => {
+    if (editor.value.tipo === "borrador")
+      imagenes.value[editor.value.indice].ajuste = ajuste;
+    else {
+      await api.anexos.ajustar(editor.value.id, ajuste);
+      await actualizarDetalle();
+    }
+    editor.value = null;
+    mensaje.value = "Ajustes guardados; la imagen original se conserva.";
+  });
+}
+async function adjuntarExistente(event) {
+  const archivosElegidos = [...event.target.files];
+  event.target.value = "";
+  if (!archivosElegidos.length) return;
+  await operacion(async () => {
+    const nuevas = [];
+    for (const archivo of archivosElegidos) {
+      const bytes = new Uint8Array(await archivo.arrayBuffer());
+      const tipo = tipoDe(bytes);
+      verificarImagen(bytes, tipo);
+      nuevas.push({ bytes, tipo, clase: claseNuevoComprobante.value });
+    }
+    await guardarComprobantesExistentes(nuevas);
+  });
+}
+async function guardarComprobantesExistentes(nuevas) {
+  await api.comprobantes.agregar(seleccion.value.id, nuevas);
+  await cargar();
+  await actualizarDetalle();
+  fotos.value = detalleCompra.value.fotos;
+  vistas.value = [];
+  for (const foto of fotos.value) {
+    const { bytes } = await api.comprobantes.original(foto.id);
+    vistas.value.push({
+      id: foto.id,
+      clase: foto.clase,
+      src: `data:${foto.tipo};base64,${bytesABase64(bytes)}`,
+    });
+  }
+  mensaje.value = "Comprobantes agregados.";
+}
+async function camaraExistente() {
+  await operacion(async () => {
+    const foto = await Camera.getPhoto({
+      quality: 85,
+      resultType: CameraResultType.DataUrl,
+      source: CameraSource.Camera,
+      correctOrientation: true,
+    });
+    const base64 = foto.dataUrl?.split(",")[1];
+    if (!base64) throw new Error("La cámara no devolvió una imagen.");
+    const bytes = base64ABytes(base64),
+      tipo = tipoDe(bytes);
+    verificarImagen(bytes, tipo);
+    await guardarComprobantesExistentes([
+      { bytes, tipo, clase: claseNuevoComprobante.value },
+    ]);
+  });
+}
 async function iniciarGestion() {
   await operacion(async () => {
     const g = {
@@ -165,12 +718,12 @@ async function iniciarGestion() {
       fecha_inicio: inicioGestion.value,
       fecha_fin: null,
     };
-    await repo.value.crearGestion(g);
+    await api.gestiones.crear(g);
     await cargar();
     nombreGestion.value = "";
     inicioGestion.value = hoy();
     form.value.gestion_id = g.id;
-    pantalla.value = "registro";
+    ir("registro");
     paso.value = 1;
     mensaje.value = "Gestión iniciada. Podés registrar la primera compra.";
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -178,10 +731,121 @@ async function iniciarGestion() {
 }
 async function terminarGestion() {
   await operacion(async () => {
-    await repo.value.cerrarGestion(cierreId.value, fechaCierre.value);
+    await api.gestiones.cerrar(cierreId.value, fechaCierre.value);
     cierreId.value = null;
     await cargar();
     mensaje.value = "Gestión terminada. Sus compras siguen disponibles.";
+  });
+}
+async function reabrirGestion() {
+  await operacion(async () => {
+    await api.gestiones.reabrir(reapertura.value.id, reapertura.value.motivo);
+    reapertura.value = { id: "", motivo: "" };
+    await cargar();
+    mensaje.value = "Gestión reabierta; se conserva el cierre anterior.";
+  });
+}
+async function verGestion(id) {
+  await operacion(async () => {
+    gestionDetalle.value = await api.gestiones.detalle(id);
+    ir("gestion-detalle");
+  });
+}
+async function actualizarDetalle() {
+  detalleCompra.value = await api.compras.detalle(seleccion.value.id);
+  seleccion.value = detalleCompra.value.compra;
+}
+async function registrarAbono() {
+  await operacion(async () => {
+    const p = abono.value;
+    await api.pagos.registrar({
+      id: p.id,
+      compra_id: seleccion.value.id,
+      fecha: p.fecha,
+      importe: centavos(p.monto),
+      origen: p.origen,
+      parte_id: p.origen === "propio" ? null : p.parte_id,
+      asignacion_id: p.asignacion_id || null,
+    });
+    p.monto = "";
+    p.id = crypto.randomUUID();
+    await cargar();
+    await actualizarDetalle();
+    mensaje.value = "Pago registrado sin duplicar la compra.";
+  });
+}
+async function anularCompra() {
+  await operacion(async () => {
+    await api.compras.anular(seleccion.value.id, motivoCompra.value);
+    motivoCompra.value = "";
+    await cargar();
+    await actualizarDetalle();
+    mensaje.value = "Compra anulada; se conserva su historial.";
+  });
+}
+async function clasificarCompra() {
+  await operacion(async () => {
+    await api.compras.clasificarPago(seleccion.value.id, {
+      forma_pago: clasificacion.value.forma_pago,
+      deudor_id:
+        clasificacion.value.forma_pago === "credito"
+          ? clasificacion.value.deudor_id
+          : null,
+    });
+    await cargar();
+    await actualizarDetalle();
+    mensaje.value = "Forma de pago registrada.";
+  });
+}
+async function corregirCompra() {
+  await operacion(async () => {
+    const c = correccionCompra.value;
+    await api.compras.corregir(
+      seleccion.value.id,
+      { concepto: c.concepto, proveedor: c.proveedor, factura: c.factura },
+      c.motivo,
+    );
+    c.visible = false;
+    c.motivo = "";
+    await cargar();
+    await actualizarDetalle();
+    mensaje.value =
+      "Datos corregidos; los valores anteriores quedan en el historial.";
+  });
+}
+async function quitarReparto() {
+  await operacion(async () => {
+    await api.compras.asignar(seleccion.value.id, [], motivoReparto.value);
+    motivoReparto.value = "";
+    await cargar();
+    await actualizarDetalle();
+    mensaje.value = "Reparto anulado; se conserva el historial.";
+  });
+}
+async function corregirEconomia() {
+  await operacion(async () => {
+    const c = correccionEconomica.value;
+    const r = await api.compras.corregirEconomia(
+      seleccion.value.id,
+      { id: c.id, importe: centavos(c.monto), moneda: c.moneda },
+      c.motivo,
+    );
+    seleccion.value = r.compra;
+    c.visible = false;
+    await cargar();
+    await actualizarDetalle();
+    fotos.value = detalleCompra.value.fotos;
+    vistas.value = [];
+    for (const foto of fotos.value) {
+      const { bytes } = await api.comprobantes.original(foto.id);
+      vistas.value.push({
+        id: foto.id,
+        clase: foto.clase,
+        src: `data:${foto.tipo};base64,${bytesABase64(bytes)}`,
+      });
+    }
+    mensaje.value =
+      "Corrección registrada. La compra original queda anulada y vinculada a esta.";
   });
 }
 function elegirGestion(id) {
@@ -190,11 +854,8 @@ function elegirGestion(id) {
 }
 function avanzar() {
   error.value = "";
-  if (
-    paso.value === 1 &&
-    (!form.value.gestion_id || !form.value.concepto.trim())
-  ) {
-    error.value = "Elegí la gestión e indicá qué compraste.";
+  if (paso.value === 1 && !form.value.concepto.trim()) {
+    error.value = "Indicá qué compraste.";
     return;
   }
   if (paso.value === 2) {
@@ -222,16 +883,32 @@ function retroceder() {
 }
 async function guardar() {
   await operacion(async () => {
-    const c = { ...form.value, importe: centavos(form.value.monto) };
+    const c = {
+      ...form.value,
+      gestion_id: form.value.gestion_id || null,
+      importe: centavos(form.value.monto),
+    };
     delete c.monto;
-    const creada = await guardarCompra(repo.value, archivos, c, imagenes.value);
-    const gestionActiva = form.value.gestion_id;
-    form.value = nuevo();
-    form.value.gestion_id = gestionActiva;
-    paso.value = 1;
-    imagenes.value = [];
+    const entrada = prepararCompraFinanciera(c, pago.value);
+    const { creada } = await api.compras.registrar({
+      ...entrada,
+      imagenes: imagenes.value,
+    });
+    pausaBorrador = true;
+    clearTimeout(temporizadorBorrador);
+    try {
+      if (borradorHabilitado) await borradores.descartar("compra");
+      const gestionActiva = form.value.gestion_id;
+      form.value = nuevo();
+      form.value.gestion_id = gestionActiva;
+      paso.value = 1;
+      imagenes.value = [];
+      pago.value = nuevoPago();
+    } finally {
+      pausaBorrador = false;
+    }
     await cargar();
-    pantalla.value = "compras";
+    ir("compras");
     window.scrollTo({ top: 0, behavior: "smooth" });
     mensaje.value = creada
       ? "Compra guardada en el dispositivo."
@@ -241,7 +918,22 @@ async function guardar() {
 async function ver(c) {
   await operacion(async () => {
     seleccion.value = c;
-    pantalla.value = "detalle";
+    await actualizarDetalle();
+    correccionCompra.value = {
+      visible: false,
+      concepto: c.concepto,
+      proveedor: c.proveedor,
+      factura: c.factura,
+      motivo: "",
+    };
+    correccionEconomica.value = {
+      visible: false,
+      id: crypto.randomUUID(),
+      monto: (c.importe / 100).toFixed(2),
+      moneda: c.moneda,
+      motivo: "",
+    };
+    ir("detalle");
     window.scrollTo({ top: 0, behavior: "smooth" });
     fotos.value = await repo.value.fotos(c.id);
     vistas.value = [];
@@ -264,7 +956,13 @@ async function exportar(formato, conFotos = true) {
     const bytes =
       formato === "xlsx"
         ? await excel(c, fotos.value, archivos, conFotos)
-        : await pdf(c, fotos.value, archivos, encabezado.value);
+        : await pdf(
+            c,
+            fotos.value,
+            archivos,
+            encabezado.value,
+            detalleCompra.value?.anexos || [],
+          );
     await compartir(
       `compra-${c.id}.${formato}`,
       bytes,
@@ -290,7 +988,7 @@ function prepararInformeDe(g) {
     g.fecha_fin || (hoy() < g.fecha_inicio ? g.fecha_inicio : hoy());
   informeGestion.value = g;
   informeForm.value = {
-    titulo: ajustes.value.encabezado || "Rendición de gastos",
+    titulo: ajustes.value.encabezado || "Informe de gastos",
     responsable: ajustes.value.responsable,
     destinatario: ajustes.value.destinatario,
     corte,
@@ -327,7 +1025,7 @@ async function emitir() {
     });
     await cargar();
     await cargarInformes();
-    pantalla.value = "informes";
+    ir("informes");
     window.scrollTo({ top: 0, behavior: "smooth" });
     mensaje.value = `Informe ${registro.codigo} emitido (revisión ${registro.revision}) y guardado ${
       Capacitor.getPlatform() === "android"
@@ -336,6 +1034,19 @@ async function emitir() {
           ? "dentro de la aplicación"
           : "en este navegador de prueba"
     }.`;
+  });
+}
+async function previsualizarGestion() {
+  await operacion(async () => {
+    const elegidas = comprasDelInforme.value.filter((c) =>
+      informeSeleccion.value.includes(c.id),
+    );
+    const r = await api.informes.previsualizar({
+      alcance: { tipo: "gestion", gestion_id: informeGestion.value.id },
+      opciones: { ...informeForm.value, compras: elegidas.map((c) => c.id) },
+    });
+    await compartir(`vista-previa-${r.codigo}.pdf`, r.bytes, "application/pdf");
+    mensaje.value = `Vista previa: ${r.filas} compras y ${r.anexos} anexos; no se emitió una revisión.`;
   });
 }
 async function cargarInformes() {
@@ -350,7 +1061,7 @@ async function cargarInformes() {
 async function abrirInformes() {
   await operacion(async () => {
     await cargarInformes();
-    pantalla.value = "informes";
+    ir("informes");
     window.scrollTo({ top: 0, behavior: "smooth" });
   });
 }
@@ -424,687 +1135,1970 @@ async function restaurar(event) {
     mensaje.value = `Restauración completa: ${resultado.compras} compras, ${resultado.fotos} comprobantes y ${resultado.informes} informes emitidos.`;
   });
 }
-const nativo = Capacitor.isNativePlatform();
 </script>
 <template>
   <div class="app-shell">
-    <header class="top">
-      <div class="wrap">
-        <span class="eyebrow">REGISTRO SIN CONEXIÓN</span>
+    <main v-if="bloqueada" class="wrap main">
+      <section class="card">
         <h1>Mis gastos</h1>
-        <p>Compras y comprobantes en tu dispositivo.</p>
-      </div>
-    </header>
-    <main class="wrap main">
-      <p v-if="error" class="alert error" role="alert">{{ error }}</p>
-      <p v-if="mensaje" class="alert success" role="status">{{ mensaje }}</p>
-      <section v-show="pantalla === 'inicio'" class="welcome">
-        <div class="welcome-copy">
-          <span class="section-kicker">TU ESPACIO</span>
-          <h2>Tu día, más claro.</h2>
-          <p>
-            Registrá una compra o revisá tus comprobantes cuando lo necesités.
+        <p>Desbloqueá con la seguridad configurada en tu teléfono.</p>
+        <p v-if="error" class="alert error" role="alert">{{ error }}</p>
+        <button
+          type="button"
+          class="primary"
+          :disabled="ocupado"
+          @click="desbloquear"
+        >
+          Desbloquear
+        </button>
+      </section>
+    </main>
+    <template v-else>
+      <header class="top">
+        <div class="wrap">
+          <span class="eyebrow">REGISTRO SIN CONEXIÓN</span>
+          <h1>Mis gastos</h1>
+          <p>Compras y comprobantes en tu dispositivo.</p>
+        </div>
+      </header>
+      <main class="wrap main">
+        <p v-if="error" class="alert error" role="alert">{{ error }}</p>
+        <p v-if="mensaje" class="alert success" role="status">{{ mensaje }}</p>
+        <form
+          v-if="anulacionMovimiento.id"
+          class="card step-fields"
+          @submit.prevent="anularMovimiento"
+        >
+          <h3>Anular operación</h3>
+          <p class="hint">
+            El historial se conserva; la operación se valida antes de aplicarse.
           </p>
-        </div>
-        <button
-          type="button"
-          class="developer-signature"
-          aria-label="Acerca de Mis gastos"
-          @click="ir('acerca')"
-        >
-          <span class="wd-badge" aria-hidden="true">WD</span
-          ><span class="developer-copy"
-            ><span>Desarrollada por W. D. Gutiérrez</span
-            ><span class="developer-more"
-              >Acerca de <span aria-hidden="true">→</span></span
-            ></span
-          >
-        </button>
-        <button
-          class="primary welcome-button"
-          type="button"
-          @click="ir('gestiones')"
-        >
-          <span class="plus">＋</span> Iniciar gestión
-        </button>
-        <div class="quick-links">
-          <button type="button" @click="todasLasCompras()">
-            <span>▤</span><strong>Mis compras</strong
-            ><small
-              >{{ compras.length }}
-              {{ compras.length === 1 ? "registro" : "registros" }}</small
-            ></button
-          ><button type="button" @click="ir('respaldo')">
-            <span>↥</span><strong>Informes y respaldo</strong
-            ><small>Configuración y copias</small>
-          </button>
-        </div>
-        <p class="hint notice">
-          Esta versión registra compras y comprobantes. Los fondos, anticipos y
-          créditos todavía están pendientes.
-        </p>
-      </section>
-      <section
-        v-show="pantalla === 'acerca'"
-        class="card about-card"
-        aria-labelledby="acerca-titulo"
-      >
-        <button type="button" class="back-link" @click="ir('inicio')">
-          ← Volver a Inicio
-        </button>
-        <div class="about-heading">
-          <span class="wd-badge wd-badge-large" aria-hidden="true">WD</span>
-          <div>
-            <span class="section-kicker">MIS GASTOS</span>
-            <h2 id="acerca-titulo">Acerca de</h2>
-          </div>
-        </div>
-        <p class="about-description">Compras y comprobantes, a tu alcance.</p>
-        <div class="about-detail">
-          <span>Desarrollo</span
-          ><strong>Desarrollada por W. D. Gutiérrez</strong>
-        </div>
-        <div class="about-detail">
-          <span>Versión</span><strong>{{ version }}</strong>
-        </div>
-      </section>
-      <section v-show="pantalla === 'gestiones'" class="card gestion-screen">
-        <span class="section-kicker">ORGANIZÁ TU JORNADA</span>
-        <h2>Mis gestiones</h2>
-        <p class="hint">
-          Abrí una gestión para reunir las compras de un viaje, encargo o
-          jornada.
-        </p>
-        <form @submit.prevent="iniciarGestion" class="step-fields gestion-form">
           <label
-            >Nombre de la gestión<input
-              v-model.trim="nombreGestion"
-              maxlength="120"
-              placeholder="Ej. Winston Managua"
+            >Motivo<input
+              v-model.trim="anulacionMovimiento.motivo"
+              minlength="3"
+              maxlength="300"
               required /></label
-          ><label
-            >Fecha de inicio<input
-              v-model="inicioGestion"
-              type="date"
-              required /></label
-          ><button type="submit" class="primary" :disabled="ocupado || !repo">
-            Iniciar gestión
+          ><button type="submit" class="secondary" :disabled="ocupado">
+            Confirmar anulación</button
+          ><button
+            type="button"
+            class="text-control"
+            @click="anulacionMovimiento.id = ''"
+          >
+            Cancelar
           </button>
         </form>
-        <div class="gestion-list">
-          <h3>Historial de gestiones</h3>
-          <label
-            >Mostrar<select v-model="estadoHistorial">
-              <option value="todas">Todas las gestiones</option>
-              <option value="abiertas">Abiertas</option>
-              <option value="terminadas">Terminadas</option>
-            </select></label
+        <EditorComprobante
+          v-if="editor"
+          :key="`${editor.tipo}-${editor.id || editor.indice}`"
+          :src="editor.src"
+          :inicial="editor.ajuste"
+          @guardar="guardarAjusteImagen"
+          @cancelar="editor = null"
+        />
+        <section v-show="pantalla === 'inicio'" class="welcome">
+          <div class="welcome-copy">
+            <span class="section-kicker">TU ESPACIO</span>
+            <h2>Tu día, más claro.</h2>
+            <p>
+              Registrá una compra o revisá tus comprobantes cuando lo necesités.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="developer-signature"
+            aria-label="Acerca de Mis gastos"
+            @click="ir('acerca')"
           >
-          <p v-if="!gestiones.length" class="hint">
-            Todavía no hay gestiones. Creá la primera para empezar.
-          </p>
-          <p v-if="gestiones.length && !gestionesVisibles.length" class="hint">
-            No hay gestiones en esta selección.
-          </p>
-          <article
-            v-for="g in gestionesVisibles"
-            :key="g.id"
-            class="gestion-item"
+            Desarrollado por W Gutiérrez
+          </button>
+          <button
+            class="primary welcome-button"
+            type="button"
+            @click="ir('gestiones')"
           >
+            <span class="plus">＋</span> Iniciar gestión
+          </button>
+          <div class="quick-links">
+            <button type="button" @click="ir('fondos')">
+              <span>＋</span><strong>Recibir dinero</strong
+              ><small>Fondos de una gestión</small>
+            </button>
+            <button type="button" @click="todasLasCompras()">
+              <span>▤</span><strong>Mis compras</strong
+              ><small
+                >{{ compras.length }}
+                {{ compras.length === 1 ? "registro" : "registros" }}</small
+              ></button
+            ><button type="button" @click="ir('respaldo')">
+              <span>↥</span><strong>Informes y respaldo</strong
+              ><small>Configuración y copias</small>
+            </button>
+          </div>
+        </section>
+        <section
+          v-show="pantalla === 'acerca'"
+          class="card about-card"
+          aria-labelledby="acerca-titulo"
+        >
+          <button type="button" class="back-link" @click="ir('inicio')">
+            ← Volver a Inicio
+          </button>
+          <div class="about-heading">
             <div>
-              <strong>{{ g.nombre }}</strong>
-              <p class="hint">
-                Inicio: {{ g.fecha_inicio }}
-                <span v-if="g.fecha_fin">· Terminó: {{ g.fecha_fin }}</span
-                ><span v-else> · Abierta</span>
-              </p>
+              <span class="section-kicker">MIS GASTOS</span>
+              <h2 id="acerca-titulo">Acerca de</h2>
             </div>
-            <div class="button-row">
-              <button
-                type="button"
-                class="text-control"
-                @click="verCompras(g.id)"
-              >
-                Ver compras
-              </button>
-              <button
-                type="button"
-                class="text-control"
-                :disabled="ocupado"
-                @click="prepararInformeDe(g)"
-              >
-                Preparar informe
-              </button>
-            </div>
-            <div v-if="!g.fecha_fin" class="button-row">
-              <button
-                type="button"
-                class="secondary"
-                @click="elegirGestion(g.id)"
-              >
-                Registrar compra</button
-              ><button
-                type="button"
-                class="text-control"
-                @click="
-                  cierreId = g.id;
-                  fechaCierre = hoy();
-                "
-              >
-                Terminar gestión
-              </button>
-            </div>
-            <form
-              v-if="cierreId === g.id"
-              @submit.prevent="terminarGestion"
-              class="close-form"
-            >
-              <label
-                >Fecha de finalización<input
-                  v-model="fechaCierre"
-                  type="date"
-                  :min="g.fecha_inicio"
-                  required
-              /></label>
-              <div class="button-row">
-                <button type="submit" class="secondary" :disabled="ocupado">
-                  Confirmar finalización</button
-                ><button
-                  type="button"
-                  class="text-control"
-                  @click="cierreId = null"
-                >
-                  Cancelar
-                </button>
-              </div>
-              <p class="hint">
-                Las compras permanecen disponibles después de terminar. Esta
-                versión todavía no calcula los saldos de la gestión.
-              </p>
-            </form>
-          </article>
-        </div>
-      </section>
-      <section
-        v-show="pantalla === 'registro'"
-        class="card"
-        aria-labelledby="registro"
-      >
-        <h2 id="registro">Registrar compra</h2>
-        <p class="hint">
-          Completá los datos y agregá los comprobantes que tengas.
-        </p>
-        <div class="steps" aria-label="Progreso de la compra">
-          <span :class="{ current: paso === 1 }">1 · Compra</span
-          ><span :class="{ current: paso === 2 }">2 · Importe</span
-          ><span :class="{ current: paso === 3 }">3 · Datos</span
-          ><span :class="{ current: paso === 4 }">4 · Foto</span>
-        </div>
-        <form @submit.prevent="guardar">
-          <div v-if="paso === 1" class="step-fields">
+          </div>
+          <p class="about-description">Compras y comprobantes, a tu alcance.</p>
+          <div class="about-detail">
+            <span>Desarrollo</span><strong>Desarrollado por W Gutiérrez</strong>
+          </div>
+          <div class="about-detail">
+            <span>Versión</span><strong>{{ version }}</strong>
+          </div>
+        </section>
+        <section v-show="pantalla === 'fondos'" class="card">
+          <button type="button" class="back-link" @click="ir('inicio')">
+            ← Volver a Inicio
+          </button>
+          <h2>Dinero de mis gestiones</h2>
+          <p class="hint">
+            Registrá cada entrega por separado. El dinero recibido es custodia,
+            no una ganancia.
+          </p>
+          <h3>Personas y empresas</h3>
+          <form class="step-fields" @submit.prevent="crearParte">
             <label
-              >Gestión<select v-model="form.gestion_id" required>
-                <option value="">Elegí una gestión</option>
-                <option
-                  v-for="g in gestiones.filter((item) => !item.fecha_fin)"
-                  :key="g.id"
-                  :value="g.id"
-                >
-                  {{ g.nombre }} · {{ g.fecha_inicio }}
+              >Nombre<input
+                v-model.trim="nombreParte"
+                maxlength="120"
+                required
+                placeholder="Quién entrega o recibe"
+            /></label>
+            <label
+              >Tipo<select v-model="tipoParte">
+                <option value="persona">Persona</option>
+                <option value="empresa">Empresa</option>
+              </select></label
+            >
+            <button
+              class="secondary"
+              type="submit"
+              :disabled="ocupado || !repo"
+            >
+              Guardar persona o empresa
+            </button>
+          </form>
+          <div v-for="p in partesTodas" :key="p.id" class="gestion-item">
+            <strong>{{ p.nombre }}</strong
+            ><span class="hint">
+              · {{ p.tipo }} · {{ p.activa ? "Activa" : "Inactiva" }}</span
+            ><button
+              v-if="p.activa"
+              type="button"
+              class="text-control"
+              @click="desactivarParte.id = p.id"
+            >
+              Desactivar
+            </button>
+            <button
+              type="button"
+              class="text-control"
+              @click="parteEdicion = { id: p.id, nombre: p.nombre, motivo: '' }"
+            >
+              Editar nombre
+            </button>
+            <button
+              type="button"
+              class="text-control"
+              @click="mostrarRoles(p.id)"
+            >
+              Ver roles
+            </button>
+          </div>
+          <form
+            v-if="parteEdicion.id"
+            class="step-fields"
+            @submit.prevent="guardarParteEditada"
+          >
+            <label
+              >Nombre<input
+                v-model.trim="parteEdicion.nombre"
+                maxlength="120"
+                required /></label
+            ><label
+              >Motivo<input
+                v-model.trim="parteEdicion.motivo"
+                minlength="3"
+                maxlength="300"
+                required /></label
+            ><button type="submit" class="secondary" :disabled="ocupado">
+              Guardar nombre</button
+            ><button
+              type="button"
+              class="text-control"
+              @click="parteEdicion.id = ''"
+            >
+              Cancelar
+            </button>
+          </form>
+          <div v-if="parteDetalle" class="gestion-item">
+            <strong>Roles de {{ parteDetalle.parte.nombre }}</strong>
+            <p v-for="(ids, rol) in parteDetalle.roles" :key="rol" class="hint">
+              {{ rol.replaceAll("_", " ") }}: {{ ids.length }}
+            </p>
+            <button
+              type="button"
+              class="text-control"
+              @click="parteDetalle = null"
+            >
+              Cerrar roles
+            </button>
+          </div>
+          <form
+            v-if="desactivarParte.id"
+            class="step-fields"
+            @submit.prevent="desactivarPersona"
+          >
+            <label
+              >Motivo<input
+                v-model.trim="desactivarParte.motivo"
+                minlength="3"
+                maxlength="300"
+                required /></label
+            ><button type="submit" class="secondary" :disabled="ocupado">
+              Confirmar desactivación</button
+            ><button
+              type="button"
+              class="text-control"
+              @click="desactivarParte.id = ''"
+            >
+              Cancelar
+            </button>
+          </form>
+          <h3>Recibir dinero</h3>
+          <form class="step-fields" @submit.prevent="recibirDinero">
+            <label
+              >Quién entrega<select v-model="ingreso.parte_id" required>
+                <option value="">Elegí una persona o empresa</option>
+                <option v-for="p in partes" :key="p.id" :value="p.id">
+                  {{ p.nombre }}
                 </option>
               </select></label
             >
-            <p v-if="!gestiones.some((g) => !g.fecha_fin)" class="hint">
-              Primero iniciá una gestión.
-              <button
-                type="button"
-                class="inline-link"
-                @click="ir('gestiones')"
-              >
-                Iniciar gestión
-              </button>
-            </p>
             <label
-              >¿Qué compraste?<input
-                v-model.trim="form.concepto"
-                maxlength="250"
-                required
-                placeholder="Ej. Materiales para la finca"
+              >Fecha<input v-model="ingreso.fecha" type="date" required
             /></label>
-          </div>
-          <div v-if="paso === 2" class="step-fields">
             <label
-              >¿Cuánto costó?<input
-                v-model="form.monto"
+              >Importe<input
+                v-model="ingreso.monto"
                 inputmode="decimal"
                 placeholder="0.00"
-                required /></label
-            ><label
-              >Moneda<select v-model="form.moneda">
+                required
+            /></label>
+            <label
+              >Moneda<select v-model="ingreso.moneda">
                 <option value="NIO">Córdobas (C$)</option>
                 <option value="USD">Dólares (US$)</option>
               </select></label
             >
-          </div>
-          <div v-if="paso === 3" class="step-fields">
             <label
-              >¿Dónde compraste?<input
-                v-model.trim="form.proveedor"
-                maxlength="250"
-                required
-                placeholder="Nombre del proveedor" /></label
-            ><label
-              >Fecha de compra<input
-                v-model="form.fecha_compra"
-                type="date"
-                required
+              >Referencia <small>(opcional)</small
+              ><input v-model="ingreso.referencia" maxlength="120"
             /></label>
-          </div>
-          <div v-if="paso === 4" class="step-fields">
-            <label
-              >Número de factura <small>(opcional)</small
-              ><input
-                v-model="form.factura"
-                maxlength="100"
-                placeholder="Conservá los ceros iniciales" /></label
-            ><label
-              >Estado del comprobante<select v-model="form.estado">
-                <option value="factura">Con factura</option>
-                <option value="sin_factura">Sin factura</option>
-                <option value="pendiente">Comprobante pendiente</option>
-              </select></label
+            <p class="hint">
+              Agregá las gestiones y el importe para cada una. Lo no asignado
+              queda disponible para aplicar después.
+            </p>
+            <div
+              v-for="(a, indice) in repartoIngreso"
+              :key="indice"
+              class="step-fields"
             >
-            <div>
-              <strong>Fotos del comprobante</strong>
-              <p class="hint">
-                Podés agregar varias imágenes o continuar sin ellas.
-              </p>
-              <div class="photo-actions">
-                <button
-                  v-if="nativo"
-                  type="button"
-                  class="secondary"
-                  :disabled="ocupado"
-                  @click="camara"
-                >
-                  Tomar foto</button
-                ><label class="file-button"
-                  >Elegir imágenes<input
-                    type="file"
-                    accept="image/jpeg,image/png"
-                    multiple
-                    :disabled="ocupado"
-                    @change="adjuntar"
-                /></label>
-              </div>
-            </div>
-            <div v-for="(imagen, i) in imagenes" :key="i" class="photo-row">
-              <span>Imagen {{ i + 1 }}</span
-              ><label
-                >Tipo<select v-model="imagen.clase">
-                  <option value="factura">Factura</option>
-                  <option value="voucher">Voucher</option>
-                  <option value="otro">Otro</option>
+              <label
+                >Gestión<select v-model="a.gestion_id" required>
+                  <option value="">Elegí una gestión</option>
+                  <option v-for="g in gestiones" :key="g.id" :value="g.id">
+                    {{ g.nombre }}
+                  </option>
                 </select></label
-              ><button
-                type="button"
-                class="link"
-                @click="imagenes.splice(i, 1)"
               >
-                Quitar
+              <label
+                >Importe a aplicar<input
+                  v-model="a.monto"
+                  inputmode="decimal"
+                  required
+              /></label>
+              <label
+                >Uso<select v-model="a.destino">
+                  <option value="anticipo">Dinero para compras</option>
+                  <option value="reembolso">Reembolso de mi adelanto</option>
+                </select></label
+              >
+              <button
+                class="text-control"
+                type="button"
+                @click="repartoIngreso.splice(indice, 1)"
+              >
+                Quitar aplicación
               </button>
             </div>
-          </div>
-          <div class="step-actions">
             <button
-              v-if="paso > 1"
               class="secondary"
               type="button"
-              @click="retroceder"
+              @click="
+                repartoIngreso.push({
+                  gestion_id: '',
+                  monto: '',
+                  destino: 'anticipo',
+                })
+              "
             >
-              ← Atrás</button
-            ><button
-              v-if="paso < 4"
-              class="primary"
-              type="button"
-              @click="avanzar"
+              Agregar gestión
+            </button>
+            <button class="primary" type="submit" :disabled="ocupado || !repo">
+              Guardar dinero recibido
+            </button>
+          </form>
+          <h3>Devolver o trasladar fondos</h3>
+          <form class="step-fields" @submit.prevent="registrarMovimiento">
+            <label
+              >Operación<select v-model="movimiento.tipo">
+                <option value="devolucion">Devolver dinero</option>
+                <option value="traslado">Trasladar a otra gestión</option>
+              </select></label
             >
-              Continuar →</button
-            ><button
-              v-else
-              class="primary"
+            <label
+              >Dueño de los fondos<select
+                v-model="movimiento.parte_id"
+                required
+              >
+                <option value="">Elegí una persona o empresa</option>
+                <option v-for="p in partes" :key="p.id" :value="p.id">
+                  {{ p.nombre }}
+                </option>
+              </select></label
+            >
+            <label
+              >Gestión de origen<select
+                v-model="movimiento.gestion_id"
+                required
+              >
+                <option value="">Elegí una gestión</option>
+                <option v-for="g in gestiones" :key="g.id" :value="g.id">
+                  {{ g.nombre }}
+                </option>
+              </select></label
+            >
+            <label v-if="movimiento.tipo === 'traslado'"
+              >Gestión de destino<select
+                v-model="movimiento.gestion_destino_id"
+                required
+              >
+                <option value="">Elegí otra gestión</option>
+                <option
+                  v-for="g in gestiones.filter(
+                    (item) => item.id !== movimiento.gestion_id,
+                  )"
+                  :key="g.id"
+                  :value="g.id"
+                >
+                  {{ g.nombre }}
+                </option>
+              </select></label
+            >
+            <label
+              >Fecha<input v-model="movimiento.fecha" type="date" required
+            /></label>
+            <label
+              >Importe<input
+                v-model="movimiento.monto"
+                inputmode="decimal"
+                required
+            /></label>
+            <label
+              >Moneda<select v-model="movimiento.moneda">
+                <option value="NIO">Córdobas (C$)</option>
+                <option value="USD">Dólares (US$)</option>
+              </select></label
+            >
+            <button
+              class="secondary"
               type="submit"
               :disabled="ocupado || !repo"
             >
-              Guardar compra
+              Registrar operación
             </button>
-          </div>
-        </form>
-      </section>
-      <section v-show="pantalla === 'compras'" class="card">
-        <h2>Compras guardadas</h2>
-        <p class="hint">
-          Las compras anteriores sin gestión aparecen como «Sin gestión».
-        </p>
-        <p v-if="filtroGestion" class="hint">
-          Gestión: {{ gestiones.find((g) => g.id === filtroGestion)?.nombre }} ·
-          <button
-            class="inline-link"
-            type="button"
-            @click="filtroGestion = null"
+          </form>
+          <h3>Saldos por gestión</h3>
+          <p v-if="!saldos.length" class="hint">
+            Todavía no hay saldos pendientes.
+          </p>
+          <div
+            v-for="s in saldos"
+            :key="`${s.tipo}-${s.gestion_id}-${s.parte_id}-${s.moneda}-${s.compra_id || ''}`"
+            class="gestion-item"
           >
-            Ver todas
-          </button>
-        </p>
-        <p v-if="!comprasVisibles.length" class="hint">
-          Todavía no hay compras registradas.
-        </p>
-        <button
-          v-for="c in comprasVisibles"
-          :key="c.id"
-          class="purchase"
-          type="button"
-          @click="ver(c)"
-        >
-          <span
-            ><strong>{{ c.concepto }}</strong
-            ><small
-              >{{ c.proveedor }} · {{ c.fecha_compra }} ·
-              {{
-                gestiones.find((g) => g.id === c.gestion_id)?.nombre ||
-                "Sin gestión"
-              }}</small
-            ></span
-          ><strong>{{ dinero(c.importe, c.moneda) }}</strong>
-        </button>
-      </section>
-      <section v-if="seleccion && pantalla === 'detalle'" class="card">
-        <button class="back-link" type="button" @click="todasLasCompras()">
-          ← Volver a mis compras
-        </button>
-        <h2>Detalle de compra</h2>
-        <p>
-          <strong>{{ seleccion.concepto }}</strong> ·
-          {{ dinero(seleccion.importe, seleccion.moneda) }}
-        </p>
-        <p class="hint">
-          {{ seleccion.proveedor }} · {{ seleccion.fecha_compra }} · Factura:
-          {{ seleccion.factura || "sin número" }}
-        </p>
-        <p class="hint">
-          {{ fotos.length }} comprobante(s) guardado(s). Los archivos se
-          incluyen según la opción elegida.
-        </p>
-        <div v-for="vista in vistas" :key="vista.id" class="comprobante">
-          <img :src="vista.src" :alt="`Comprobante: ${vista.clase}`" />
-          <span>{{ vista.clase }}</span>
-        </div>
-        <div class="button-row">
-          <button
-            class="secondary"
-            :disabled="ocupado"
-            @click="exportar('xlsx', true)"
-          >
-            Excel con imágenes</button
-          ><button
-            class="secondary"
-            :disabled="ocupado"
-            @click="exportar('xlsx', false)"
-          >
-            Excel sin imágenes</button
-          ><button
-            class="secondary"
-            :disabled="ocupado"
-            @click="exportar('pdf')"
-          >
-            PDF con imágenes
-          </button>
-        </div>
-      </section>
-      <section
-        v-if="informeGestion && pantalla === 'preparar-informe'"
-        class="card"
-      >
-        <button type="button" class="back-link" @click="ir('gestiones')">
-          ← Volver a Gestiones
-        </button>
-        <span class="section-kicker">RENDICIÓN DE GASTOS</span>
-        <h2>Informe de {{ informeGestion.nombre }}</h2>
-        <p class="hint">
-          Cada emisión queda registrada como una revisión nueva. Las anteriores
-          no cambian.
-        </p>
-        <form @submit.prevent="emitir" class="step-fields">
-          <label
-            >Título del informe<input
-              v-model="informeForm.titulo"
-              maxlength="120"
-              required /></label
-          ><label
-            >Responsable<input
-              v-model="informeForm.responsable"
-              maxlength="120"
-              placeholder="Quién rinde los gastos" /></label
-          ><label
-            >Destinatario<input
-              v-model="informeForm.destinatario"
-              maxlength="120"
-              placeholder="Empresa o persona que recibe el informe" /></label
-          ><label
-            >Fecha de corte<input
-              v-model="informeForm.corte"
-              type="date"
-              :min="informeGestion.fecha_inicio"
-              required /></label
-          ><label
-            >Papel<select v-model="informeForm.papel">
-              <option value="carta">Carta</option>
-              <option value="a4">A4</option>
-            </select></label
-          ><label
-            >Presentación<select v-model="informeForm.estilo">
-              <option value="ejecutivo">Ejecutivo moderno</option>
-              <option value="formal">Formal para impresión</option>
-            </select></label
-          ><label class="check"
-            ><input
-              v-model="informeForm.incluirFotos"
-              type="checkbox"
-            />Adjuntar los comprobantes como anexos</label
-          >
-          <fieldset class="seleccion-informe">
-            <legend>Compras que se comparten</legend>
-            <p v-if="!comprasDelInforme.length" class="hint">
-              No hay compras hasta la fecha de corte.
-            </p>
-            <label v-for="c in comprasDelInforme" :key="c.id" class="check"
-              ><input
-                v-model="informeSeleccion"
-                type="checkbox"
-                :value="c.id"
-              /><span
-                >{{ fechaVista(c.fecha_compra) }} · {{ c.concepto }} ·
-                <strong>{{ dinero(c.importe, c.moneda) }}</strong></span
-              ></label
+            <strong
+              >{{
+                {
+                  custodia: "Disponible en custodia",
+                  por_reembolsar: "Por reembolsar",
+                  por_regularizar: "Por regularizar",
+                  deuda_proveedor: "Deuda con proveedor",
+                }[s.tipo]
+              }}: {{ dinero(s.importe, s.moneda) }}</strong
             >
             <p class="hint">
-              Desmarcá las compras que no corresponden a este destinatario. La
-              separación automática por empresa llega con las asignaciones.
+              {{
+                gestiones.find((g) => g.id === s.gestion_id)?.nombre ||
+                "Sin gestión"
+              }}
+              ·
+              {{
+                partesTodas.find((p) => p.id === s.parte_id)?.nombre ||
+                "Parte no disponible"
+              }}
+              <span v-if="s.proveedor">· {{ s.proveedor }}</span>
             </p>
-          </fieldset>
-          <button type="submit" class="primary" :disabled="ocupado || !repo">
-            Emitir informe PDF
-          </button>
-        </form>
-        <p class="hint">
-          El informe resume compras: no calcula anticipos, reembolsos ni saldos,
-          y emitirlo no equivale a aprobación ni a pago.
-        </p>
-      </section>
-      <section v-show="pantalla === 'informes'" class="card">
-        <h2>Informes emitidos</h2>
-        <p v-if="nativo && Capacitor.getPlatform() === 'android'" class="hint">
-          Informes PDF en Documentos/«{{ CARPETA_INFORMES }}». Para abrir uno,
-          elegí una aplicación disponible en tu teléfono.
-        </p>
-        <p v-else-if="nativo" class="hint">
-          Informes guardados dentro de esta aplicación. Para abrir uno, elegí
-          una aplicación disponible en tu teléfono.
-        </p>
-        <p v-else class="hint">Informes guardados en el navegador de prueba.</p>
-        <p
-          v-if="!revisiones.length && !informesSinRegistro.length"
-          class="hint"
-        >
-          Todavía no hay informes. Prepará uno desde una gestión.
-        </p>
-        <article v-for="r in revisiones" :key="r.id" class="revision-item">
-          <div>
-            <strong>{{ r.codigo }}</strong>
-            <span class="hint"
-              >{{ r.nombre || "Gestión no disponible" }} · revisión
-              {{ r.revision }} · corte {{ fechaVista(r.fecha_corte) }}</span
-            >
-            <small :class="['estado-archivo', r.estado]">{{
-              ESTADO_ARCHIVO[r.estado]
-            }}</small>
           </div>
+          <h3>Entradas de dinero</h3>
+          <form class="step-fields" @submit.prevent="aplicarDinero">
+            <h4>Aplicar dinero pendiente</h4>
+            <label
+              >Entrada con dinero sin aplicar<select
+                v-model="aplicarIngreso.id"
+                required
+              >
+                <option value="">Elegí una entrada</option>
+                <option
+                  v-for="r in recepciones.filter(
+                    (item) => item.sin_aplicar > 0 && !item.anulada,
+                  )"
+                  :key="r.id"
+                  :value="r.id"
+                >
+                  {{ r.fecha }} · {{ dinero(r.sin_aplicar, r.moneda) }} ·
+                  {{
+                    partesTodas.find((p) => p.id === r.parte_id)?.nombre ||
+                    "Parte"
+                  }}
+                </option>
+              </select></label
+            >
+            <label
+              >Gestión<select v-model="aplicarIngreso.gestion_id" required>
+                <option value="">Elegí una gestión</option>
+                <option v-for="g in gestiones" :key="g.id" :value="g.id">
+                  {{ g.nombre }}
+                </option>
+              </select></label
+            >
+            <label
+              >Importe<input
+                v-model="aplicarIngreso.monto"
+                inputmode="decimal"
+                required
+            /></label>
+            <label
+              >Uso<select v-model="aplicarIngreso.destino">
+                <option value="anticipo">Dinero para compras</option>
+                <option value="reembolso">Reembolso de mi adelanto</option>
+              </select></label
+            >
+            <button
+              class="secondary"
+              type="submit"
+              :disabled="ocupado || !repo"
+            >
+              Aplicar dinero
+            </button>
+          </form>
+          <p v-if="!recepciones.length" class="hint">
+            Todavía no registraste entregas.
+          </p>
+          <div v-for="r in recepciones" :key="r.id" class="gestion-item">
+            <strong
+              >{{ dinero(r.importe, r.moneda) }} ·
+              {{
+                partesTodas.find((p) => p.id === r.parte_id)?.nombre ||
+                "Parte no disponible"
+              }}</strong
+            >
+            <p class="hint">
+              {{ r.fecha }} <span v-if="r.referencia">· {{ r.referencia }}</span
+              ><span v-if="r.anulada"> · Anulada</span
+              ><span v-if="r.sin_aplicar">
+                · Sin aplicar: {{ dinero(r.sin_aplicar, r.moneda) }}</span
+              >
+            </p>
+            <p v-for="a in r.aplicaciones" :key="a.id" class="hint">
+              {{
+                gestiones.find((g) => g.id === a.gestion_id)?.nombre ||
+                "Gestión"
+              }}
+              · {{ a.destino === "anticipo" ? "Anticipo" : "Reembolso" }} ·
+              {{ dinero(a.importe, r.moneda)
+              }}<span v-if="a.anulada"> · Anulada</span>
+              <button
+                v-if="!a.anulada"
+                type="button"
+                class="text-control"
+                @click="elegirAnulacion('aplicacion', a.id)"
+              >
+                Anular aplicación
+              </button>
+            </p>
+            <button
+              v-if="!r.anulada"
+              type="button"
+              class="text-control"
+              @click="elegirAnulacion('recepcion', r.id)"
+            >
+              Anular entrada
+            </button>
+          </div>
+        </section>
+        <section v-show="pantalla === 'gestiones'" class="card gestion-screen">
+          <span class="section-kicker">ORGANIZÁ TU JORNADA</span>
+          <h2>Mis gestiones</h2>
+          <p class="hint">
+            Abrí una gestión para reunir las compras de un viaje, encargo o
+            jornada.
+          </p>
+          <form
+            @submit.prevent="iniciarGestion"
+            class="step-fields gestion-form"
+          >
+            <label
+              >Nombre de la gestión<input
+                v-model.trim="nombreGestion"
+                maxlength="120"
+                placeholder="Ej. Winston Managua"
+                required /></label
+            ><label
+              >Fecha de inicio<input
+                v-model="inicioGestion"
+                type="date"
+                required /></label
+            ><button type="submit" class="primary" :disabled="ocupado || !repo">
+              Iniciar gestión
+            </button>
+          </form>
+          <div class="gestion-list">
+            <h3>Historial de gestiones</h3>
+            <label
+              >Mostrar<select v-model="estadoHistorial">
+                <option value="todas">Todas las gestiones</option>
+                <option value="abiertas">Abiertas</option>
+                <option value="terminadas">Terminadas</option>
+              </select></label
+            >
+            <p v-if="!gestiones.length" class="hint">
+              Todavía no hay gestiones. Creá la primera para empezar.
+            </p>
+            <p
+              v-if="gestiones.length && !gestionesVisibles.length"
+              class="hint"
+            >
+              No hay gestiones en esta selección.
+            </p>
+            <article
+              v-for="g in gestionesVisibles"
+              :key="g.id"
+              class="gestion-item"
+            >
+              <div>
+                <strong>{{ g.nombre }}</strong>
+                <p class="hint">
+                  Inicio: {{ g.fecha_inicio }}
+                  <span v-if="g.fecha_fin">· Terminó: {{ g.fecha_fin }}</span
+                  ><span v-else> · Abierta</span>
+                </p>
+              </div>
+              <div class="button-row">
+                <button
+                  type="button"
+                  class="text-control"
+                  @click="verGestion(g.id)"
+                >
+                  Ver detalle e historial
+                </button>
+                <button
+                  type="button"
+                  class="text-control"
+                  @click="verCompras(g.id)"
+                >
+                  Ver compras
+                </button>
+                <button
+                  type="button"
+                  class="text-control"
+                  @click="
+                    repartoIngreso = [
+                      { gestion_id: g.id, monto: '', destino: 'anticipo' },
+                    ];
+                    ir('fondos');
+                  "
+                >
+                  Ver fondos / recibir dinero
+                </button>
+                <button
+                  type="button"
+                  class="text-control"
+                  :disabled="ocupado"
+                  @click="prepararInformeDe(g)"
+                >
+                  Preparar informe
+                </button>
+              </div>
+              <div v-if="!g.fecha_fin" class="button-row">
+                <button
+                  type="button"
+                  class="secondary"
+                  @click="elegirGestion(g.id)"
+                >
+                  Registrar compra</button
+                ><button
+                  type="button"
+                  class="text-control"
+                  @click="
+                    cierreId = g.id;
+                    fechaCierre = hoy();
+                  "
+                >
+                  Terminar gestión
+                </button>
+              </div>
+              <button
+                v-else
+                type="button"
+                class="text-control"
+                @click="reapertura.id = g.id"
+              >
+                Reabrir gestión
+              </button>
+              <form
+                v-if="reapertura.id === g.id"
+                class="step-fields"
+                @submit.prevent="reabrirGestion"
+              >
+                <label
+                  >Motivo de reapertura<input
+                    v-model.trim="reapertura.motivo"
+                    minlength="3"
+                    maxlength="300"
+                    required
+                /></label>
+                <button type="submit" class="secondary" :disabled="ocupado">
+                  Confirmar reapertura
+                </button>
+                <button
+                  type="button"
+                  class="text-control"
+                  @click="reapertura.id = ''"
+                >
+                  Cancelar
+                </button>
+              </form>
+              <form
+                v-if="cierreId === g.id"
+                @submit.prevent="terminarGestion"
+                class="close-form"
+              >
+                <label
+                  >Fecha de finalización<input
+                    v-model="fechaCierre"
+                    type="date"
+                    :min="g.fecha_inicio"
+                    required
+                /></label>
+                <div class="button-row">
+                  <button type="submit" class="secondary" :disabled="ocupado">
+                    Confirmar finalización</button
+                  ><button
+                    type="button"
+                    class="text-control"
+                    @click="cierreId = null"
+                  >
+                    Cancelar
+                  </button>
+                </div>
+                <p class="hint">
+                  Las compras y saldos permanecen disponibles después de
+                  terminar.
+                </p>
+              </form>
+            </article>
+          </div>
+        </section>
+        <section
+          v-if="pantalla === 'gestion-detalle' && gestionDetalle"
+          class="card"
+        >
+          <button type="button" class="back-link" @click="ir('gestiones')">
+            ← Volver a gestiones
+          </button>
+          <h2>{{ gestionDetalle.gestion.nombre }}</h2>
+          <p class="hint">
+            {{ gestionDetalle.gestion.fecha_inicio }} ·
+            {{ gestionDetalle.gestion.estado }} · Liquidación:
+            {{ gestionDetalle.liquidacion }}
+          </p>
+          <h3>Compras</h3>
+          <p v-if="!gestionDetalle.compras.length" class="hint">Sin compras.</p>
+          <button
+            v-for="c in gestionDetalle.compras"
+            :key="c.id"
+            type="button"
+            class="purchase"
+            @click="ver(c)"
+          >
+            <span>{{ c.concepto }} · {{ c.proveedor }}</span
+            ><strong>{{ dinero(c.importe, c.moneda) }}</strong>
+          </button>
+          <h3>Dinero</h3>
+          <p v-if="!gestionDetalle.saldos.length" class="hint">
+            Sin saldos pendientes.
+          </p>
+          <p
+            v-for="s in gestionDetalle.saldos"
+            :key="`${s.tipo}-${s.parte_id}-${s.moneda}-${s.compra_id || ''}`"
+          >
+            {{ s.tipo }} ·
+            {{
+              partesTodas.find((p) => p.id === s.parte_id)?.nombre || "Parte"
+            }}
+            ·
+            {{ dinero(s.importe, s.moneda) }}
+          </p>
+          <h3>Historial</h3>
+          <p v-if="!gestionDetalle.historial.length" class="hint">
+            Sin movimientos.
+          </p>
+          <div
+            v-for="h in gestionDetalle.historial"
+            :key="`${h.tipo}-${h.id}`"
+            class="gestion-item"
+          >
+            <strong>{{ h.fecha }} · {{ h.tipo }}</strong>
+            <p class="hint">
+              {{ h.concepto || h.motivo || h.origen || "" }}
+              <span v-if="h.parte_id"
+                >·
+                {{
+                  partesTodas.find((p) => p.id === h.parte_id)?.nombre ||
+                  "Parte"
+                }}</span
+              ><span v-if="h.moneda && h.importe">
+                · {{ dinero(h.importe, h.moneda) }}</span
+              ><span v-if="h.referencia"> · {{ h.referencia }}</span
+              ><span v-if="h.anulada"> · Anulado</span>
+            </p>
+            <button
+              v-if="!h.anulada && ['devolucion', 'traslado'].includes(h.tipo)"
+              type="button"
+              class="text-control"
+              @click="elegirAnulacion('movimiento', h.id)"
+            >
+              Anular movimiento
+            </button>
+            <button
+              v-if="tieneReferencia(h)"
+              type="button"
+              class="text-control"
+              @click="abrirHistorial(h)"
+            >
+              Ver operación relacionada
+            </button>
+          </div>
+        </section>
+        <section
+          v-show="pantalla === 'registro'"
+          class="card"
+          aria-labelledby="registro"
+        >
+          <h2 id="registro">Registrar compra</h2>
+          <p class="hint">
+            Completá los datos y agregá los comprobantes que tengas.
+          </p>
+          <div class="steps" aria-label="Progreso de la compra">
+            <span :class="{ current: paso === 1 }">1 · Compra</span
+            ><span :class="{ current: paso === 2 }">2 · Importe</span
+            ><span :class="{ current: paso === 3 }">3 · Datos</span
+            ><span :class="{ current: paso === 4 }">4 · Foto</span>
+          </div>
+          <form @submit.prevent="guardar">
+            <div v-if="paso === 1" class="step-fields">
+              <label
+                >Gestión <small>(opcional)</small
+                ><select v-model="form.gestion_id">
+                  <option value="">Sin gestión</option>
+                  <option
+                    v-for="g in gestiones.filter((item) => !item.fecha_fin)"
+                    :key="g.id"
+                    :value="g.id"
+                  >
+                    {{ g.nombre }} · {{ g.fecha_inicio }}
+                  </option>
+                </select></label
+              >
+              <p v-if="!gestiones.some((g) => !g.fecha_fin)" class="hint">
+                También podés iniciar una gestión.
+                <button
+                  type="button"
+                  class="inline-link"
+                  @click="ir('gestiones')"
+                >
+                  Iniciar gestión
+                </button>
+              </p>
+              <label
+                >¿Qué compraste?<input
+                  v-model.trim="form.concepto"
+                  maxlength="250"
+                  required
+                  placeholder="Ej. Materiales para la finca"
+              /></label>
+            </div>
+            <div v-if="paso === 2" class="step-fields">
+              <label
+                >¿Cuánto costó?<input
+                  v-model="form.monto"
+                  inputmode="decimal"
+                  placeholder="0.00"
+                  required /></label
+              ><label
+                >Moneda<select v-model="form.moneda">
+                  <option value="NIO">Córdobas (C$)</option>
+                  <option value="USD">Dólares (US$)</option>
+                </select></label
+              >
+            </div>
+            <div v-if="paso === 3" class="step-fields">
+              <label
+                >¿Dónde compraste?<input
+                  v-model.trim="form.proveedor"
+                  maxlength="250"
+                  required
+                  placeholder="Nombre del proveedor" /></label
+              ><label
+                >Fecha de compra<input
+                  v-model="form.fecha_compra"
+                  type="date"
+                  required
+              /></label>
+            </div>
+            <div v-if="paso === 4" class="step-fields">
+              <label
+                >¿Cómo se paga esta compra?<select v-model="pago.tipo">
+                  <option value="sin_detalle">Todavía sin detallar</option>
+                  <option value="fondo">Con dinero recibido</option>
+                  <option value="propio">Con mi dinero, por reembolsar</option>
+                  <option value="combinado">
+                    Dinero recibido y aporte propio
+                  </option>
+                  <option value="credito">A crédito con el proveedor</option>
+                  <option value="avanzado">
+                    Repartir entre varias personas y pagos
+                  </option>
+                </select></label
+              >
+              <label
+                v-if="pago.tipo !== 'sin_detalle' && pago.tipo !== 'avanzado'"
+                >{{
+                  pago.tipo === "credito"
+                    ? "Quién debe al proveedor"
+                    : "Persona o empresa de la compra"
+                }}<select v-model="pago.parte_id" required>
+                  <option value="">Elegí una persona o empresa</option>
+                  <option v-for="p in partes" :key="p.id" :value="p.id">
+                    {{ p.nombre }}
+                  </option>
+                </select></label
+              >
+              <p
+                v-if="pago.tipo !== 'sin_detalle' && !partes.length"
+                class="hint"
+              >
+                Primero agregá la persona o empresa en «Recibir dinero».
+              </p>
+              <label v-if="pago.tipo === 'combinado'"
+                >Importe pagado con el fondo<input
+                  v-model="pago.fondo"
+                  inputmode="decimal"
+                  placeholder="0.00"
+                  required
+              /></label>
+              <div v-if="pago.tipo === 'avanzado'" class="step-fields">
+                <label
+                  >Forma de pago<select v-model="pago.forma_pago">
+                    <option value="contado">Contado</option>
+                    <option value="credito">Crédito comercial</option>
+                  </select></label
+                >
+                <label v-if="pago.forma_pago === 'credito'"
+                  >Deudor ante el proveedor<select
+                    v-model="pago.deudor_id"
+                    required
+                  >
+                    <option value="">Elegí el deudor</option>
+                    <option v-for="p in partes" :key="p.id" :value="p.id">
+                      {{ p.nombre }}
+                    </option>
+                  </select></label
+                >
+                <strong>Reparto de la compra</strong>
+                <p class="hint">
+                  Las asignaciones deben sumar el importe total. Podés incluir
+                  un destino personal.
+                </p>
+                <div
+                  v-for="(a, i) in pago.asignaciones"
+                  :key="i"
+                  class="step-fields"
+                >
+                  <label
+                    >Destino<select v-model="a.parte_id">
+                      <option value="">Personal</option>
+                      <option v-for="p in partes" :key="p.id" :value="p.id">
+                        {{ p.nombre }}
+                      </option>
+                    </select></label
+                  ><label
+                    >Importe<input
+                      v-model="a.monto"
+                      inputmode="decimal"
+                      required /></label
+                  ><button
+                    type="button"
+                    class="text-control"
+                    :disabled="pago.pagos.length > 0"
+                    @click="pago.asignaciones.splice(i, 1)"
+                  >
+                    Quitar destino
+                  </button>
+                </div>
+                <p v-if="pago.pagos.length" class="hint">
+                  Para quitar un destino, primero quitá los pagos vinculados.
+                </p>
+                <button
+                  type="button"
+                  class="secondary"
+                  @click="pago.asignaciones.push({ parte_id: '', monto: '' })"
+                >
+                  Agregar destino
+                </button>
+                <strong>Pagos efectuados</strong>
+                <p class="hint">
+                  Elegí el destino al que corresponde cada pago. Si es crédito,
+                  podés registrar pagos después.
+                </p>
+                <div v-for="(p, i) in pago.pagos" :key="i" class="step-fields">
+                  <label
+                    >Origen<select v-model="p.origen">
+                      <option value="propio">Mi dinero</option>
+                      <option value="fondo">Dinero recibido</option>
+                      <option value="tercero">
+                        Pago directo de un tercero
+                      </option>
+                    </select></label
+                  ><label v-if="p.origen !== 'propio'"
+                    >Quién pagó o dueño del fondo<select
+                      v-model="p.parte_id"
+                      required
+                    >
+                      <option value="">Elegí una persona o empresa</option>
+                      <option
+                        v-for="parte in partes"
+                        :key="parte.id"
+                        :value="parte.id"
+                      >
+                        {{ parte.nombre }}
+                      </option>
+                    </select></label
+                  ><label
+                    >Asignación<select v-model="p.asignacion">
+                      <option value="">Sin asignar</option>
+                      <option
+                        v-for="(a, indice) in pago.asignaciones"
+                        :key="indice"
+                        :value="indice"
+                      >
+                        {{
+                          partesTodas.find((x) => x.id === a.parte_id)
+                            ?.nombre || "Personal"
+                        }}
+                        · {{ a.monto }}
+                      </option>
+                    </select></label
+                  ><label
+                    >Importe<input
+                      v-model="p.monto"
+                      inputmode="decimal"
+                      required /></label
+                  ><button
+                    type="button"
+                    class="text-control"
+                    @click="pago.pagos.splice(i, 1)"
+                  >
+                    Quitar pago
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="secondary"
+                  @click="
+                    pago.pagos.push({
+                      origen: 'propio',
+                      parte_id: '',
+                      asignacion: '',
+                      monto: '',
+                    })
+                  "
+                >
+                  Agregar pago
+                </button>
+              </div>
+              <label
+                >Número de factura <small>(opcional)</small
+                ><input
+                  v-model="form.factura"
+                  maxlength="100"
+                  placeholder="Conservá los ceros iniciales" /></label
+              ><label
+                >Estado del comprobante<select v-model="form.estado">
+                  <option value="factura">Con factura</option>
+                  <option value="sin_factura">Sin factura</option>
+                  <option value="pendiente">Comprobante pendiente</option>
+                </select></label
+              >
+              <fieldset
+                v-if="catalogos.some((item) => item.activa)"
+                class="seleccion-informe"
+              >
+                <legend>Datos descriptivos opcionales</legend>
+                <p class="hint">
+                  Las etiquetas no sustituyen el origen del pago ni cambian los
+                  saldos.
+                </p>
+                <label
+                  v-for="item in catalogos.filter((x) => x.activa)"
+                  :key="item.id"
+                  class="check"
+                  ><input
+                    v-model="form.catalogos"
+                    type="checkbox"
+                    :value="item.id"
+                  />{{ item.tipo }} · {{ item.nombre }}</label
+                >
+              </fieldset>
+              <div>
+                <strong>Fotos del comprobante</strong>
+                <p class="hint">
+                  Podés agregar varias imágenes o continuar sin ellas.
+                </p>
+                <div class="photo-actions">
+                  <button
+                    v-if="nativo"
+                    type="button"
+                    class="secondary"
+                    :disabled="ocupado"
+                    @click="camara"
+                  >
+                    Tomar foto</button
+                  ><label class="file-button"
+                    >Elegir imágenes<input
+                      type="file"
+                      accept="image/jpeg,image/png"
+                      multiple
+                      :disabled="ocupado"
+                      @change="adjuntar"
+                  /></label>
+                </div>
+              </div>
+              <div v-for="(imagen, i) in imagenes" :key="i" class="photo-row">
+                <span>Imagen {{ i + 1 }}</span
+                ><label
+                  >Tipo<select v-model="imagen.clase">
+                    <option value="factura">Factura</option>
+                    <option value="voucher">Voucher</option>
+                    <option value="otro">Otro</option>
+                  </select></label
+                ><button type="button" class="link" @click="editarBorrador(i)">
+                  Ajustar</button
+                ><button
+                  type="button"
+                  class="link"
+                  @click="imagenes.splice(i, 1)"
+                >
+                  Quitar
+                </button>
+              </div>
+            </div>
+            <div class="step-actions">
+              <button
+                v-if="paso > 1"
+                class="secondary"
+                type="button"
+                @click="retroceder"
+              >
+                ← Atrás</button
+              ><button
+                v-if="paso < 4"
+                class="primary"
+                type="button"
+                @click="avanzar"
+              >
+                Continuar →</button
+              ><button
+                v-else
+                class="primary"
+                type="submit"
+                :disabled="ocupado || !repo"
+              >
+                Guardar compra
+              </button>
+            </div>
+          </form>
+        </section>
+        <section v-show="pantalla === 'compras'" class="card">
+          <h2>Compras guardadas</h2>
+          <p class="hint">
+            Las compras anteriores sin gestión aparecen como «Sin gestión».
+          </p>
+          <p v-if="filtroGestion" class="hint">
+            Gestión:
+            {{ gestiones.find((g) => g.id === filtroGestion)?.nombre }} ·
+            <button
+              class="inline-link"
+              type="button"
+              @click="filtroGestion = null"
+            >
+              Ver todas
+            </button>
+          </p>
+          <p v-if="!comprasVisibles.length" class="hint">
+            Todavía no hay compras registradas.
+          </p>
+          <button
+            v-for="c in comprasVisibles"
+            :key="c.id"
+            class="purchase"
+            type="button"
+            @click="ver(c)"
+          >
+            <span
+              ><strong>{{ c.concepto }}</strong
+              ><small
+                >{{ c.proveedor }} · {{ c.fecha_compra }} ·
+                {{
+                  gestiones.find((g) => g.id === c.gestion_id)?.nombre ||
+                  "Sin gestión"
+                }}</small
+              ></span
+            ><strong>{{ dinero(c.importe, c.moneda) }}</strong>
+          </button>
+        </section>
+        <section v-if="seleccion && pantalla === 'detalle'" class="card">
+          <button class="back-link" type="button" @click="atras()">
+            ← Volver
+          </button>
+          <h2>Detalle de compra</h2>
+          <p>
+            <strong>{{ seleccion.concepto }}</strong> ·
+            {{ dinero(seleccion.importe, seleccion.moneda) }}
+          </p>
+          <p class="hint">
+            {{ seleccion.proveedor }} · {{ seleccion.fecha_compra }} · Factura:
+            {{ seleccion.factura || "sin número" }}
+          </p>
+          <p v-if="detalleCompra?.catalogos.length" class="hint">
+            Etiquetas:
+            {{
+              detalleCompra.catalogos
+                .map((x) => `${x.tipo}: ${x.nombre}`)
+                .join(" · ")
+            }}
+          </p>
+          <button
+            v-if="!seleccion.anulada"
+            type="button"
+            class="text-control"
+            @click="correccionCompra.visible = !correccionCompra.visible"
+          >
+            Corregir datos descriptivos
+          </button>
+          <button
+            v-if="!seleccion.anulada"
+            type="button"
+            class="text-control"
+            @click="correccionEconomica.visible = !correccionEconomica.visible"
+          >
+            Corregir importe o moneda
+          </button>
+          <form
+            v-if="correccionEconomica.visible && !seleccion.anulada"
+            class="step-fields"
+            @submit.prevent="corregirEconomia"
+          >
+            <p class="hint">
+              La compra original se conserva anulada. Primero anulá sus pagos y
+              retirás sus asignaciones vigentes; después registrá de nuevo los
+              pagos que correspondan.
+            </p>
+            <label
+              >Importe correcto<input
+                v-model="correccionEconomica.monto"
+                inputmode="decimal"
+                required /></label
+            ><label
+              >Moneda<select v-model="correccionEconomica.moneda">
+                <option value="NIO">Córdobas</option>
+                <option value="USD">Dólares</option>
+              </select></label
+            ><label
+              >Motivo<input
+                v-model.trim="correccionEconomica.motivo"
+                minlength="3"
+                maxlength="300"
+                required /></label
+            ><button type="submit" class="secondary" :disabled="ocupado">
+              Registrar corrección
+            </button>
+          </form>
+          <form
+            v-if="
+              !seleccion.anulada &&
+              detalleCompra?.asignaciones.some((a) => !a.anulada)
+            "
+            class="step-fields"
+            @submit.prevent="quitarReparto"
+          >
+            <p class="hint">
+              Para retirar el reparto, primero anulá los pagos asociados.
+            </p>
+            <label
+              >Motivo para retirar reparto<input
+                v-model.trim="motivoReparto"
+                minlength="3"
+                maxlength="300"
+                required /></label
+            ><button type="submit" class="secondary" :disabled="ocupado">
+              Retirar reparto
+            </button>
+          </form>
+          <form
+            v-if="correccionCompra.visible && !seleccion.anulada"
+            class="step-fields"
+            @submit.prevent="corregirCompra"
+          >
+            <label
+              >Concepto<input
+                v-model.trim="correccionCompra.concepto"
+                maxlength="250"
+                required /></label
+            ><label
+              >Proveedor<input
+                v-model.trim="correccionCompra.proveedor"
+                maxlength="250"
+                required /></label
+            ><label
+              >Número de factura<input
+                v-model="correccionCompra.factura"
+                maxlength="100" /></label
+            ><label
+              >Motivo<input
+                v-model.trim="correccionCompra.motivo"
+                minlength="3"
+                maxlength="300"
+                required /></label
+            ><button type="submit" class="secondary" :disabled="ocupado">
+              Guardar corrección
+            </button>
+          </form>
+          <div v-if="detalleCompra?.eventos.length">
+            <h3>Historial de cambios</h3>
+            <p
+              v-for="e in detalleCompra.eventos.filter(
+                (x) => x.tipo !== 'identidad_registro',
+              )"
+              :key="e.id"
+              class="hint"
+            >
+              {{ e.fecha }} · {{ e.tipo }} · {{ e.motivo }}
+            </p>
+          </div>
+          <p class="hint">
+            Forma de pago: {{ seleccion.forma_pago
+            }}<span v-if="seleccion.anulada"> · Compra anulada</span
+            ><span v-if="seleccion.deudor_id">
+              · Deudor:
+              {{
+                partesTodas.find((p) => p.id === seleccion.deudor_id)?.nombre ||
+                "No disponible"
+              }}</span
+            >
+          </p>
+          <h3>Pagos registrados</h3>
+          <p v-if="!detalleCompra?.pagos.length" class="hint">
+            Todavía no hay pagos registrados.
+          </p>
+          <p v-for="p in detalleCompra?.pagos || []" :key="p.id" class="hint">
+            {{ p.fecha }} · {{ dinero(p.importe, seleccion.moneda) }} ·
+            {{ p.origen }}<span v-if="p.anulada"> · Anulado</span>
+            <button
+              v-if="!p.anulada"
+              type="button"
+              class="text-control"
+              @click="elegirAnulacion('pago', p.id)"
+            >
+              Anular pago
+            </button>
+          </p>
+          <form
+            v-if="!seleccion.anulada && seleccion.forma_pago !== 'sin_detalle'"
+            class="step-fields"
+            @submit.prevent="registrarAbono"
+          >
+            <h3>Registrar pago posterior</h3>
+            <label
+              >Fecha<input v-model="abono.fecha" type="date" required
+            /></label>
+            <label
+              >Importe<input v-model="abono.monto" inputmode="decimal" required
+            /></label>
+            <label
+              >Origen<select v-model="abono.origen">
+                <option value="tercero">
+                  Pago directo de otra persona o empresa
+                </option>
+                <option value="fondo">Dinero recibido</option>
+                <option value="propio">Mi dinero</option>
+              </select></label
+            >
+            <label v-if="abono.origen !== 'propio'"
+              >Quién pagó o dueño del fondo<select
+                v-model="abono.parte_id"
+                required
+              >
+                <option value="">Elegí una persona o empresa</option>
+                <option v-for="p in partes" :key="p.id" :value="p.id">
+                  {{ p.nombre }}
+                </option>
+              </select></label
+            >
+            <label v-if="detalleCompra?.asignaciones.some((a) => !a.anulada)"
+              >Asignación<select v-model="abono.asignacion_id">
+                <option value="">Sin asignar</option>
+                <option
+                  v-for="a in detalleCompra.asignaciones.filter(
+                    (x) => !x.anulada,
+                  )"
+                  :key="a.id"
+                  :value="a.id"
+                >
+                  {{
+                    partesTodas.find((p) => p.id === a.parte_id)?.nombre ||
+                    "Personal"
+                  }}
+                  · {{ dinero(a.importe, seleccion.moneda) }}
+                </option>
+              </select></label
+            >
+            <button class="secondary" type="submit" :disabled="ocupado">
+              Guardar pago
+            </button>
+          </form>
+          <form
+            v-if="!seleccion.anulada && seleccion.forma_pago === 'sin_detalle'"
+            class="step-fields"
+            @submit.prevent="clasificarCompra"
+          >
+            <h3>Indicar forma de pago</h3>
+            <label
+              >Forma de pago<select v-model="clasificacion.forma_pago">
+                <option value="contado">Contado</option>
+                <option value="credito">Crédito</option>
+              </select></label
+            >
+            <label v-if="clasificacion.forma_pago === 'credito'"
+              >Quién debe al proveedor<select
+                v-model="clasificacion.deudor_id"
+                required
+              >
+                <option value="">Elegí una persona o empresa</option>
+                <option v-for="p in partes" :key="p.id" :value="p.id">
+                  {{ p.nombre }}
+                </option>
+              </select></label
+            >
+            <button type="submit" class="secondary" :disabled="ocupado">
+              Guardar clasificación
+            </button>
+          </form>
+          <form
+            v-if="!seleccion.anulada"
+            class="step-fields"
+            @submit.prevent="anularCompra"
+          >
+            <h3>Anular compra</h3>
+            <p class="hint">
+              Se conserva la historia y se anulan sus pagos asociados.
+            </p>
+            <label
+              >Motivo<input
+                v-model.trim="motivoCompra"
+                minlength="3"
+                maxlength="300"
+                required
+            /></label>
+            <button type="submit" class="secondary" :disabled="ocupado">
+              Anular compra
+            </button>
+          </form>
+          <p class="hint">
+            {{ fotos.length }} comprobante(s) guardado(s). Los archivos se
+            incluyen según la opción elegida.
+          </p>
+          <div v-for="vista in vistas" :key="vista.id" class="comprobante">
+            <img :src="vista.src" :alt="`Comprobante: ${vista.clase}`" />
+            <span>{{ vista.clase }}</span>
+            <button
+              type="button"
+              class="secondary"
+              @click="editarGuardado(vista)"
+            >
+              Ajustar imagen
+            </button>
+          </div>
+          <label v-if="!seleccion.anulada"
+            >Tipo de comprobante adicional<select
+              v-model="claseNuevoComprobante"
+            >
+              <option value="factura">Factura</option>
+              <option value="voucher">Voucher</option>
+              <option value="otro">Otro</option>
+            </select></label
+          >
+          <label v-if="!seleccion.anulada" class="file-button"
+            >Agregar comprobantes<input
+              type="file"
+              accept="image/jpeg,image/png"
+              multiple
+              :disabled="ocupado"
+              @change="adjuntarExistente"
+          /></label>
+          <button
+            v-if="nativo && !seleccion.anulada"
+            type="button"
+            class="secondary"
+            :disabled="ocupado"
+            @click="camaraExistente"
+          >
+            Tomar foto para esta compra
+          </button>
           <div class="button-row">
+            <button
+              class="secondary"
+              :disabled="ocupado"
+              @click="exportar('xlsx', true)"
+            >
+              Excel con imágenes</button
+            ><button
+              class="secondary"
+              :disabled="ocupado"
+              @click="exportar('xlsx', false)"
+            >
+              Excel sin imágenes</button
+            ><button
+              class="secondary"
+              :disabled="ocupado"
+              @click="exportar('pdf')"
+            >
+              PDF con imágenes
+            </button>
+          </div>
+        </section>
+        <section
+          v-if="informeGestion && pantalla === 'preparar-informe'"
+          class="card"
+        >
+          <button type="button" class="back-link" @click="ir('gestiones')">
+            ← Volver a Gestiones
+          </button>
+          <span class="section-kicker">INFORME DE GASTOS</span>
+          <h2>Informe de {{ informeGestion.nombre }}</h2>
+          <p class="hint">
+            Cada emisión queda registrada como una revisión nueva. Las
+            anteriores no cambian.
+          </p>
+          <form @submit.prevent="emitir" class="step-fields">
+            <label
+              >Título del informe<input
+                v-model="informeForm.titulo"
+                maxlength="120"
+                required /></label
+            ><label
+              >Responsable<input
+                v-model="informeForm.responsable"
+                maxlength="120"
+                placeholder="Responsable de los gastos" /></label
+            ><label
+              >Destinatario<input
+                v-model="informeForm.destinatario"
+                maxlength="120"
+                placeholder="Empresa o persona que recibe el informe" /></label
+            ><label
+              >Fecha de corte<input
+                v-model="informeForm.corte"
+                type="date"
+                :min="informeGestion.fecha_inicio"
+                required /></label
+            ><label
+              >Papel<select v-model="informeForm.papel">
+                <option value="carta">Carta</option>
+                <option value="a4">A4</option>
+              </select></label
+            ><label
+              >Presentación<select v-model="informeForm.estilo">
+                <option value="ejecutivo">Ejecutivo moderno</option>
+                <option value="formal">Formal para impresión</option>
+              </select></label
+            ><label class="check"
+              ><input
+                v-model="informeForm.incluirFotos"
+                type="checkbox"
+              />Adjuntar los comprobantes como anexos</label
+            >
+            <fieldset class="seleccion-informe">
+              <legend>Compras que se comparten</legend>
+              <p v-if="!comprasDelInforme.length" class="hint">
+                No hay compras hasta la fecha de corte.
+              </p>
+              <label v-for="c in comprasDelInforme" :key="c.id" class="check"
+                ><input
+                  v-model="informeSeleccion"
+                  type="checkbox"
+                  :value="c.id"
+                /><span
+                  >{{ fechaVista(c.fecha_compra) }} · {{ c.concepto }} ·
+                  <strong>{{ dinero(c.importe, c.moneda) }}</strong></span
+                ></label
+              >
+              <p class="hint">
+                Desmarcá las compras que no corresponden a este destinatario. La
+                separación automática por empresa llega con las asignaciones.
+              </p>
+            </fieldset>
+            <button
+              type="button"
+              class="secondary"
+              :disabled="ocupado || !repo"
+              @click="previsualizarGestion"
+            >
+              Ver vista previa PDF
+            </button>
+            <button type="submit" class="primary" :disabled="ocupado || !repo">
+              Emitir informe PDF
+            </button>
+          </form>
+          <p class="hint">
+            El informe utiliza los movimientos financieros registrados. Emitirlo
+            no equivale a aprobación ni a pago.
+          </p>
+        </section>
+        <section v-show="pantalla === 'informes'" class="card">
+          <h2>Informes emitidos</h2>
+          <button
+            type="button"
+            class="primary spaced"
+            @click="ir('informe-general')"
+          >
+            Preparar otro informe
+          </button>
+          <p
+            v-if="nativo && Capacitor.getPlatform() === 'android'"
+            class="hint"
+          >
+            Informes PDF en Documentos/«{{ CARPETA_INFORMES }}». Para abrir uno,
+            elegí una aplicación disponible en tu teléfono.
+          </p>
+          <p v-else-if="nativo" class="hint">
+            Informes guardados dentro de esta aplicación. Para abrir uno, elegí
+            una aplicación disponible en tu teléfono.
+          </p>
+          <p v-else class="hint">
+            Informes guardados en el navegador de prueba.
+          </p>
+          <p
+            v-if="!revisiones.length && !informesSinRegistro.length"
+            class="hint"
+          >
+            Todavía no hay informes. Prepará uno desde una gestión.
+          </p>
+          <article v-for="r in revisiones" :key="r.id" class="revision-item">
+            <div>
+              <strong>{{ r.codigo }}</strong>
+              <span class="hint"
+                >{{ r.nombre || "Gestión no disponible" }} · revisión
+                {{ r.revision }} · corte {{ fechaVista(r.fecha_corte) }}</span
+              >
+              <small :class="['estado-archivo', r.estado]">{{
+                ESTADO_ARCHIVO[r.estado]
+              }}</small>
+            </div>
+            <div class="button-row">
+              <button
+                type="button"
+                class="secondary"
+                :disabled="ocupado"
+                @click="abrirRevision(r)"
+              >
+                Abrir PDF</button
+              ><button
+                type="button"
+                class="text-control"
+                :disabled="ocupado"
+                @click="excelRevision(r)"
+              >
+                Excel
+              </button>
+            </div>
+          </article>
+          <h3 v-if="informesSinRegistro.length">
+            Informes anteriores sin revisión
+          </h3>
+          <button
+            v-for="nombre in informesSinRegistro"
+            :key="nombre"
+            type="button"
+            class="purchase"
+            :disabled="ocupado"
+            @click="abrirInforme(nombre)"
+          >
+            <span
+              ><strong>{{ etiquetaInforme(nombre) }}</strong
+              ><small>PDF guardado</small></span
+            ><span>↗</span>
+          </button>
+          <p v-if="Capacitor.getPlatform() === 'android'" class="hint">
+            La carpeta Documentos es compartida en el teléfono: otras
+            aplicaciones con acceso a esos archivos podrían leer los informes.
+            No se envían a otro sistema automáticamente.
+          </p>
+          <p v-else class="hint">
+            Los informes incluyen datos de compras. Revisá el destino antes de
+            compartirlos.
+          </p>
+        </section>
+        <section v-show="pantalla === 'informe-general'" class="card">
+          <button type="button" class="back-link" @click="ir('informes')">
+            ← Volver a informes
+          </button>
+          <h2>Preparar informe de gastos</h2>
+          <form
+            class="step-fields"
+            @submit.prevent="informeGeneralAccion(false)"
+          >
+            <label
+              >Alcance<select v-model="informeGeneral.tipo">
+                <option value="periodo">Período</option>
+                <option value="gestiones">Varias gestiones</option>
+                <option value="parte">Persona o empresa</option>
+                <option value="pendientes">Comprobantes pendientes</option>
+              </select></label
+            >
+            <template v-if="informeGeneral.tipo === 'periodo'"
+              ><label
+                >Desde<input
+                  v-model="informeGeneral.desde"
+                  type="date"
+                  required /></label
+              ><label
+                >Hasta<input
+                  v-model="informeGeneral.hasta"
+                  type="date"
+                  required /></label
+            ></template>
+            <label v-if="informeGeneral.tipo === 'parte'"
+              >Persona o empresa<select
+                v-model="informeGeneral.parte_id"
+                required
+              >
+                <option value="">Elegí un destinatario</option>
+                <option v-for="p in partes" :key="p.id" :value="p.id">
+                  {{ p.nombre }}
+                </option>
+              </select></label
+            >
+            <fieldset
+              v-if="informeGeneral.tipo === 'gestiones'"
+              class="seleccion-informe"
+            >
+              <legend>Gestiones</legend>
+              <label v-for="g in gestiones" :key="g.id" class="check"
+                ><input
+                  v-model="informeGeneral.gestion_ids"
+                  type="checkbox"
+                  :value="g.id"
+                />{{ g.nombre }}</label
+              >
+            </fieldset>
+            <label
+              >Título<input
+                v-model.trim="informeGeneral.titulo"
+                maxlength="120"
+                required /></label
+            ><label
+              >Responsable<input
+                v-model.trim="informeGeneral.responsable"
+                maxlength="120" /></label
+            ><label
+              >Destinatario<input
+                v-model.trim="informeGeneral.destinatario"
+                maxlength="120" /></label
+            ><label
+              >Fecha de corte<input
+                v-model="informeGeneral.corte"
+                type="date"
+                required
+            /></label>
+            <label
+              >Papel<select v-model="informeGeneral.papel">
+                <option value="carta">Carta</option>
+                <option value="a4">A4</option>
+              </select></label
+            ><label
+              >Estilo<select v-model="informeGeneral.estilo">
+                <option value="ejecutivo">Ejecutivo</option>
+                <option value="formal">Formal</option>
+              </select></label
+            >
+            <label class="check"
+              ><input
+                v-model="informeGeneral.incluirFotos"
+                type="checkbox"
+              />Incluir comprobantes</label
+            >
+            <label
+              v-if="
+                informeGeneral.tipo === 'parte' && informeGeneral.incluirFotos
+              "
+              class="check"
+              ><input
+                v-model="informeGeneral.incluirCompartidos"
+                type="checkbox"
+              />Acepto incluir comprobantes compartidos que pueden contener
+              información de otras personas.</label
+            >
             <button
               type="button"
               class="secondary"
               :disabled="ocupado"
-              @click="abrirRevision(r)"
+              @click="informeGeneralAccion(true)"
             >
-              Abrir PDF</button
+              Ver vista previa PDF
+            </button>
+            <button type="submit" class="primary" :disabled="ocupado">
+              Emitir informe
+            </button>
+          </form>
+        </section>
+        <section v-show="pantalla === 'respaldo'" class="card">
+          <h2>Informes y respaldo</h2>
+          <h3>Catálogos descriptivos</h3>
+          <p class="hint">
+            Cuentas, medios, categorías y destinos no cambian automáticamente
+            los saldos.
+          </p>
+          <form class="step-fields" @submit.prevent="crearCatalogo">
+            <label
+              >Tipo<select v-model="catalogoForm.tipo">
+                <option value="cuenta">Cuenta</option>
+                <option value="medio">Medio de pago</option>
+                <option value="categoria">Categoría</option>
+                <option value="destino">Destino</option>
+              </select></label
+            ><label
+              >Nombre<input
+                v-model.trim="catalogoForm.nombre"
+                maxlength="120"
+                required /></label
+            ><button
+              type="submit"
+              class="secondary"
+              :disabled="ocupado || !repo"
+            >
+              Guardar elemento
+            </button>
+          </form>
+          <div v-for="item in catalogos" :key="item.id" class="gestion-item">
+            <strong>{{ item.nombre }}</strong
+            ><span class="hint">
+              · {{ item.tipo }} ·
+              {{ item.activa ? "Activo" : "Inactivo" }}</span
             ><button
               type="button"
               class="text-control"
-              :disabled="ocupado"
-              @click="excelRevision(r)"
+              @click="
+                catalogoEdicion = {
+                  id: item.id,
+                  nombre: item.nombre,
+                  motivo: '',
+                }
+              "
             >
-              Excel
+              Editar</button
+            ><button
+              v-if="item.activa"
+              type="button"
+              class="text-control"
+              @click="desactivarCatalogo(item)"
+            >
+              Desactivar
             </button>
           </div>
-        </article>
-        <h3 v-if="informesSinRegistro.length">
-          Informes anteriores sin revisión
-        </h3>
-        <button
-          v-for="nombre in informesSinRegistro"
-          :key="nombre"
-          type="button"
-          class="purchase"
-          :disabled="ocupado"
-          @click="abrirInforme(nombre)"
-        >
-          <span
-            ><strong>{{ etiquetaInforme(nombre) }}</strong
-            ><small>PDF guardado</small></span
-          ><span>↗</span>
-        </button>
-        <p v-if="Capacitor.getPlatform() === 'android'" class="hint">
-          La carpeta Documentos es compartida en el teléfono: otras aplicaciones
-          con acceso a esos archivos podrían leer los informes. No se envían a
-          otro sistema automáticamente.
-        </p>
-        <p v-else class="hint">
-          Los informes incluyen datos de compras. Revisá el destino antes de
-          compartirlos.
-        </p>
-      </section>
-      <section v-show="pantalla === 'respaldo'" class="card">
-        <h2>Informes y respaldo</h2>
-        <button
-          type="button"
-          class="secondary spaced"
-          :disabled="ocupado"
-          @click="abrirInformes"
-        >
-          Ver informes guardados
-        </button>
-        <label
-          >Encabezado de PDF<input
-            v-model="encabezado"
-            maxlength="120" /></label
-        ><button
-          class="secondary spaced"
-          :disabled="ocupado || !repo"
-          @click="guardarEncabezado"
-        >
-          Guardar encabezado
-        </button>
-        <div class="button-row">
-          <button
-            class="secondary"
-            :disabled="ocupado || !repo"
-            @click="respaldo"
+          <form
+            v-if="catalogoEdicion.id"
+            class="step-fields"
+            @submit.prevent="editarCatalogo"
           >
-            Crear respaldo</button
-          ><label class="file-button"
-            >Restaurar respaldo<input
-              type="file"
-              accept=".zip,application/zip"
+            <label
+              >Nombre<input
+                v-model.trim="catalogoEdicion.nombre"
+                maxlength="120"
+                required /></label
+            ><label
+              >Motivo<input
+                v-model.trim="catalogoEdicion.motivo"
+                minlength="3"
+                maxlength="300"
+                required /></label
+            ><button type="submit" class="secondary" :disabled="ocupado">
+              Guardar cambio</button
+            ><button
+              type="button"
+              class="text-control"
+              @click="catalogoEdicion.id = ''"
+            >
+              Cancelar
+            </button>
+          </form>
+          <h3>Seguridad de la aplicación</h3>
+          <p class="hint">
+            Opcional: al abrir la aplicación, usá la huella, el reconocimiento
+            facial o el PIN del dispositivo, según esté configurado. Este
+            bloqueo no cifra los respaldos.
+          </p>
+          <button
+            type="button"
+            class="secondary spaced"
+            :disabled="ocupado || !nativo"
+            @click="cambiarSeguridad"
+          >
+            {{
+              seguridadActiva ? "Desactivar protección" : "Activar protección"
+            }}
+          </button>
+          <p v-if="!nativo" class="hint">
+            La protección está disponible en la aplicación instalada.
+          </p>
+          <button
+            type="button"
+            class="secondary spaced"
+            :disabled="ocupado"
+            @click="abrirInformes"
+          >
+            Ver informes guardados
+          </button>
+          <label
+            >Encabezado de PDF<input
+              v-model="encabezado"
+              maxlength="120" /></label
+          ><button
+            class="secondary spaced"
+            :disabled="ocupado || !repo"
+            @click="guardarEncabezado"
+          >
+            Guardar encabezado
+          </button>
+          <div class="button-row">
+            <button
+              class="secondary"
               :disabled="ocupado || !repo"
-              @change="restaurar"
-          /></label>
-        </div>
-        <p class="hint">
-          El respaldo incluye compras, fotos, movimientos de dinero y la copia
-          privada de cada informe emitido, con sus huellas. No está cifrado ni
-          tiene contraseña: guardalo en un lugar privado. Restaurarlo reemplaza
-          los datos actuales.
+              @click="respaldo"
+            >
+              Crear respaldo</button
+            ><label class="file-button"
+              >Restaurar respaldo<input
+                type="file"
+                accept=".zip,application/zip"
+                :disabled="ocupado || !repo"
+                @change="restaurar"
+            /></label>
+          </div>
+          <p class="hint">
+            El respaldo incluye compras, fotos, movimientos de dinero y la copia
+            privada de cada informe emitido, con sus huellas. No está cifrado ni
+            tiene contraseña: guardalo en un lugar privado. Restaurarlo
+            reemplaza los datos actuales.
+          </p>
+        </section>
+        <p class="footer">
+          Los datos se guardan en este dispositivo. La aplicación todavía no
+          sincroniza información.
         </p>
-      </section>
-      <p class="footer">
-        Los datos se guardan en este dispositivo. La aplicación todavía no
-        sincroniza información.
-      </p>
-    </main>
-    <nav class="bottom-nav" aria-label="Navegación principal">
-      <button
-        type="button"
-        :class="{ active: pantalla === 'inicio' }"
-        :aria-current="pantalla === 'inicio' ? 'page' : undefined"
-        @click="ir('inicio')"
-      >
-        <span aria-hidden="true">⌂</span>Inicio
-      </button>
-      <button
-        type="button"
-        :class="{ active: pantalla === 'gestiones' }"
-        :aria-current="pantalla === 'gestiones' ? 'page' : undefined"
-        @click="ir('gestiones')"
-      >
-        <span aria-hidden="true">▧</span>Gestiones
-      </button>
-      <button
-        type="button"
-        :class="{ active: pantalla === 'registro' }"
-        :aria-current="pantalla === 'registro' ? 'page' : undefined"
-        @click="ir('registro')"
-      >
-        <span aria-hidden="true">＋</span>Registrar
-      </button>
-      <button
-        type="button"
-        :class="{ active: pantalla === 'compras' || pantalla === 'detalle' }"
-        :aria-current="
-          pantalla === 'compras' || pantalla === 'detalle' ? 'page' : undefined
-        "
-        @click="todasLasCompras()"
-      >
-        <span aria-hidden="true">▤</span>Compras
-      </button>
-      <button
-        type="button"
-        :class="{ active: pantalla === 'respaldo' }"
-        :aria-current="pantalla === 'respaldo' ? 'page' : undefined"
-        @click="ir('respaldo')"
-      >
-        <span aria-hidden="true">↥</span>Respaldo
-      </button>
-    </nav>
+      </main>
+      <nav class="bottom-nav" aria-label="Navegación principal">
+        <button
+          type="button"
+          :class="{ active: pantalla === 'inicio' }"
+          :aria-current="pantalla === 'inicio' ? 'page' : undefined"
+          @click="ir('inicio')"
+        >
+          <span aria-hidden="true">⌂</span>Inicio
+        </button>
+        <button
+          type="button"
+          :class="{ active: pantalla === 'gestiones' }"
+          :aria-current="pantalla === 'gestiones' ? 'page' : undefined"
+          @click="ir('gestiones')"
+        >
+          <span aria-hidden="true">▧</span>Gestiones
+        </button>
+        <button
+          type="button"
+          :class="{ active: pantalla === 'registro' }"
+          :aria-current="pantalla === 'registro' ? 'page' : undefined"
+          @click="ir('registro')"
+        >
+          <span aria-hidden="true">＋</span>Registrar
+        </button>
+        <button
+          type="button"
+          :class="{ active: pantalla === 'compras' || pantalla === 'detalle' }"
+          :aria-current="
+            pantalla === 'compras' || pantalla === 'detalle'
+              ? 'page'
+              : undefined
+          "
+          @click="todasLasCompras()"
+        >
+          <span aria-hidden="true">▤</span>Compras
+        </button>
+        <button
+          type="button"
+          :class="{ active: pantalla === 'respaldo' }"
+          :aria-current="pantalla === 'respaldo' ? 'page' : undefined"
+          @click="ir('respaldo')"
+        >
+          <span aria-hidden="true">↥</span>Respaldo
+        </button>
+      </nav>
+    </template>
   </div>
 </template>
 <style scoped>
@@ -1162,17 +3156,15 @@ label.check input {
   margin-top: 1px;
 }
 .developer-signature {
-  display: flex;
-  align-items: center;
-  gap: 11px;
-  width: 100%;
-  margin: 0 0 14px;
-  padding: 0 0 14px;
+  display: inline-block;
+  width: auto;
+  margin: 0 0 10px;
+  padding: 2px 0;
   text-align: left;
   background: transparent;
   border: 0;
-  border-bottom: 1px solid #e5eee7;
   color: #49695b;
+  font-size: 12px;
 }
 .wd-badge {
   display: inline-flex;

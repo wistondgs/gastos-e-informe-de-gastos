@@ -2,10 +2,10 @@ import { fechaValida } from "./gestion.js";
 export const PAPELES = { carta: [612, 792], a4: [595.28, 841.89] };
 export const ESTILOS = ["ejecutivo", "formal"];
 export const TIPOS_INFORME = {
-  gestion: { prefijo: "GR", nombre: "Rendición de gastos por gestión" },
-  gestiones: { prefijo: "GM", nombre: "Rendición de varias gestiones" },
+  gestion: { prefijo: "GR", nombre: "Informe de gastos por gestión" },
+  gestiones: { prefijo: "GM", nombre: "Informe de gastos de varias gestiones" },
   periodo: { prefijo: "GH", nombre: "Historial de compras por período" },
-  parte: { prefijo: "GP", nombre: "Rendición por empresa o persona" },
+  parte: { prefijo: "GP", nombre: "Informe de gastos por empresa o persona" },
   pendientes: { prefijo: "GC", nombre: "Gastos pendientes de comprobante" },
 };
 const CLASES = { factura: "Factura", voucher: "Voucher", otro: "Soporte" };

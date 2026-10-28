@@ -35,7 +35,10 @@ INSERT INTO informes_v4 (id,clave,alcance,gestion_id,revision,codigo,fecha_corte
 DROP TABLE informes;
 ALTER TABLE informes_v4 RENAME TO informes;
 PRAGMA user_version = 4;`;
-export const VERSION_ESQUEMA = 4;
+const migration5 = `CREATE TABLE catalogos (id TEXT PRIMARY KEY, tipo TEXT NOT NULL CHECK(tipo IN ('cuenta','medio','categoria','destino')), nombre TEXT NOT NULL, activa INTEGER NOT NULL DEFAULT 1 CHECK(activa IN (0,1)), creada TEXT NOT NULL);
+CREATE TABLE catalogo_usos (id TEXT PRIMARY KEY, catalogo_id TEXT NOT NULL REFERENCES catalogos(id), compra_id TEXT NOT NULL REFERENCES compras(id), tipo TEXT NOT NULL CHECK(tipo IN ('cuenta','medio','categoria','destino')), nombre TEXT NOT NULL);
+PRAGMA user_version = 5;`;
+export const VERSION_ESQUEMA = 5;
 export const AJUSTES = {
   encabezado: "Informe de gastos",
   responsable: "",
@@ -62,6 +65,7 @@ export async function inicializar(db) {
   if (v < 2) await db.execute(migration2, true);
   if (v < 3) await db.execute(migration3, true);
   if (v < 4) await db.execute(migration4, true);
+  if (v < 5) await db.execute(migration5, true);
 }
 const insertar = (tabla, fila) => ({
   statement: insertarSql(tabla),
@@ -69,10 +73,54 @@ const insertar = (tabla, fila) => ({
 });
 const igualFila = (tabla, a, b) =>
   JSON.stringify(valoresDe(tabla, a)) === JSON.stringify(valoresDe(tabla, b));
+const coordinadores = new WeakMap();
 export function repositorio(db) {
+  if (!coordinadores.has(db))
+    coordinadores.set(db, { turno: Promise.resolve() });
+  const coordinador = coordinadores.get(db);
+  let enTransaccion = false;
+  let alRevertir = [];
   const filas = async (sql, valores = []) =>
     (await db.query(sql, valores)).values || [];
   const repo = {
+    async exclusiva(operacion) {
+      const anterior = coordinador.turno;
+      let liberar;
+      coordinador.turno = new Promise((resolve) => {
+        liberar = resolve;
+      });
+      await anterior;
+      try {
+        return db.exclusiva ? await db.exclusiva(operacion) : await operacion();
+      } finally {
+        liberar();
+      }
+    },
+    alRevertir(accion) {
+      if (!enTransaccion) throw new Error("No hay transacción activa.");
+      alRevertir.push(accion);
+    },
+    async transaccion(operacion) {
+      return repo.exclusiva(async () => {
+        await db.beginTransaction();
+        enTransaccion = true;
+        alRevertir = [];
+        try {
+          const resultado = await operacion();
+          await db.commitTransaction();
+          return resultado;
+        } catch (error) {
+          await db.rollbackTransaction().catch(() => {});
+          await Promise.all(
+            alRevertir.map((accion) => accion().catch(() => {})),
+          );
+          throw error;
+        } finally {
+          enTransaccion = false;
+          alRevertir = [];
+        }
+      });
+    },
     /** Todas las filas de una tabla, en el orden de su clave. */
     async todas(tabla) {
       const t = TABLA[tabla];
@@ -123,7 +171,7 @@ export function repositorio(db) {
           values: [...nombres.map((c) => campos[c]), id],
         });
       }
-      if (set.length) await db.executeSet(set, true);
+      if (set.length) await db.executeSet(set, !enTransaccion);
       return nuevas > 0 || cambios.length > 0;
     },
     async gestiones() {

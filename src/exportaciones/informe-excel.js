@@ -18,7 +18,7 @@ function hoja(libro, nombre, columnas) {
 export async function informeExcel(modelo) {
   const o = modelo.opciones;
   const libro = new ExcelJS.Workbook();
-  libro.creator = "Gastos y Rendiciones";
+  libro.creator = "Gastos e Informe de Gastos";
   libro.created = libro.modified = new Date(o.generado);
   const resumen = libro.addWorksheet("Resumen");
   resumen.columns = [{ width: 26 }, { width: 50 }, { width: 12 }];
@@ -34,13 +34,13 @@ export async function informeExcel(modelo) {
     ["Emitido (UTC)", o.generado],
   ];
   for (const r of filas) resumen.addRow(r).getCell(1).font = { bold: true };
-  for (const l of modelo.financiero?.liquidaciones || [])
-    resumen
-      .addRow([
-        `Liquidación: ${seguro(l.gestion)}`,
-        ESTADO_LIQUIDACION[l.estado],
-      ])
-      .getCell(1).font = { bold: true };
+  for (const l of modelo.financiero?.liquidaciones || []) {
+    const texto = `${seguro(l.gestion)}: ${ESTADO_LIQUIDACION[l.estado]}`;
+    const fila = resumen.addRow(["Liquidación", texto]);
+    fila.getCell(1).font = { bold: true };
+    fila.getCell(2).alignment = { wrapText: true, vertical: "top" };
+    fila.height = Math.max(15, Math.ceil(texto.length / 45) * 15);
+  }
   resumen.addRow([]);
   resumen.addRow([
     "Moneda",

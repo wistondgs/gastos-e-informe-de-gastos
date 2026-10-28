@@ -37,10 +37,10 @@ async function empaquetar(datos, manifiesto = { version: 1, archivos: {} }) {
   );
   return z.generateAsync({ type: "uint8array" });
 }
-test("la migración 1→4 conserva compras, identificadores, ceros, importes y fotos (la base del APK PASO-A)", async () => {
+test("la migración 1→5 conserva compras, identificadores, ceros, importes y fotos (la base del APK PASO-A)", async () => {
   const db = adaptarSqlJs(SQL, baseV1().export(), () => {});
   await inicializar(db);
-  assert.equal(await version(db), 4);
+  assert.equal(await version(db), 5);
   const repo = repositorio(db);
   const [c] = await repo.compras();
   assert.equal(c.id, "previa");
@@ -130,6 +130,24 @@ const opciones = {
   incluirFotos: true,
 };
 const deGestion = { tipo: "gestion", gestion_id: "g1" };
+test("una revisión de motor anterior se abre desde su copia privada sin modificar sus bytes", async () => {
+  const e = await entorno();
+  await basico(e.api);
+  await e.api.compras.registrar(compra({ id: "historica" }));
+  const emitido = await e.api.informes.emitir({
+    alcance: deGestion,
+    opciones,
+    exportar: false,
+  });
+  await e.repo.aplicar({
+    cambios: [
+      { tabla: "informes", id: emitido.informe.id, campos: { motor: 2 } },
+    ],
+  });
+  const abierto = await e.api.informes.abrir(emitido.informe.id);
+  assert.equal(abierto.origen, "privado");
+  assert.equal(await huella(abierto.bytes), await huella(emitido.bytes));
+});
 test("cada emisión es una revisión nueva; la entregada se regenera idéntica aunque después cambien los datos", async () => {
   const { api, storage } = await entorno();
   await basico(api);

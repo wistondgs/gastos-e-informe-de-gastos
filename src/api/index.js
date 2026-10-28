@@ -6,6 +6,7 @@
  */
 import { validarCompra, MONEDAS } from "../dominio/compra.js";
 import { validarGestion, fechaValida } from "../dominio/gestion.js";
+import { validarCatalogo } from "../dominio/catalogos.js";
 import { verificarImagen } from "../dominio/operaciones.js";
 import {
   calcularSaldos,
@@ -54,6 +55,35 @@ export function crearApi({
       datos: JSON.stringify(datos),
     },
   });
+  const ordenar = (v) => {
+    if (v instanceof Uint8Array) return Array.from(v);
+    if (Array.isArray(v)) return v.map(ordenar);
+    if (v && typeof v === "object")
+      return Object.fromEntries(
+        Object.keys(v)
+          .sort()
+          .filter((k) => v[k] !== undefined)
+          .map((k) => [k, ordenar(v[k])]),
+      );
+    return v;
+  };
+  const identidad = async (valor) =>
+    huella(new TextEncoder().encode(JSON.stringify(ordenar(valor))));
+  async function verificarReintento(entidad, id, firma) {
+    const e = (await repo.todas("eventos")).find(
+      (x) =>
+        x.entidad === entidad &&
+        x.entidad_id === id &&
+        x.tipo === "identidad_registro",
+    );
+    if (!e || JSON.parse(e.datos).firma !== firma)
+      throw new ErrorApi(
+        "CONFLICTO",
+        "El identificador ya pertenece a otro registro o su contenido original no puede verificarse.",
+      );
+  }
+  const eventoIdentidad = (entidad, id, firma) =>
+    evento(entidad, id, "identidad_registro", "", { firma });
   /** Valida el conjunto completo como quedaría y recién entonces lo guarda. */
   async function confirmar({ altas = [], cambios = [] }) {
     const datos = await repo.cargarTodo();
@@ -139,6 +169,55 @@ export function crearApi({
           .filter((p) => incluirInactivas || p.activa === 1)
           .sort((a, b) => a.nombre.localeCompare(b.nombre));
       },
+      async editar(id, { nombre }, motivo) {
+        const anterior = await exigir("partes", id, "la persona o empresa");
+        const parte = validarParte({ ...anterior, nombre: nombre?.trim() });
+        await repo.aplicar({
+          cambios: [{ tabla: "partes", id, campos: { nombre: parte.nombre } }],
+          altas: [
+            evento("parte", id, "editar", MOTIVO(motivo), {
+              antes: { nombre: anterior.nombre },
+              despues: { nombre: parte.nombre },
+            }),
+          ],
+        });
+        return { parte };
+      },
+      async detalle(id) {
+        const parte = await exigir("partes", id, "la persona o empresa");
+        const d = await repo.cargarTodo();
+        return {
+          parte,
+          roles: {
+            responsable_de_gestiones: d.gestiones
+              .filter((g) => g.responsable_id === id)
+              .map((g) => g.id),
+            beneficiaria_de_compras: d.asignaciones
+              .filter((a) => a.parte_id === id && !a.anulada)
+              .map((a) => a.compra_id),
+            deudora_de_creditos: d.compras
+              .filter((c) => c.deudor_id === id && !c.anulada)
+              .map((c) => c.id),
+            pagos_directos: d.pagos
+              .filter(
+                (p) =>
+                  p.parte_id === id && p.origen === "tercero" && !p.anulada,
+              )
+              .map((p) => p.id),
+            fondos_entregados: d.recepciones
+              .filter((r) => r.parte_id === id && !r.anulada)
+              .map((r) => r.id),
+            fondos_utilizados: d.pagos
+              .filter(
+                (p) => p.parte_id === id && p.origen === "fondo" && !p.anulada,
+              )
+              .map((p) => p.id),
+          },
+          eventos: d.eventos.filter(
+            (e) => e.entidad === "parte" && e.entidad_id === id,
+          ),
+        };
+      },
       /** Desactivar no borra: la parte sigue en su historia y en sus informes. */
       async desactivar(id, motivo) {
         const p = await exigir("partes", id, "la persona o empresa");
@@ -148,6 +227,69 @@ export function crearApi({
           altas: [evento("parte", id, "desactivar", MOTIVO(motivo))],
         });
         return { parte: { ...p, activa: 0 } };
+      },
+    },
+
+    catalogos: {
+      async crear({ id = uuid(), tipo, nombre }) {
+        const item = validarCatalogo({
+          id,
+          tipo,
+          nombre: nombre?.trim(),
+          activa: 1,
+          creada: ahora(),
+        });
+        const anterior = await repo.una("catalogos", id);
+        if (anterior) {
+          if (anterior.tipo !== item.tipo || anterior.nombre !== item.nombre)
+            throw new ErrorApi(
+              "CONFLICTO",
+              "El identificador ya pertenece a otro elemento.",
+            );
+          return { item: anterior, creado: false };
+        }
+        await repo.aplicar({ altas: [{ tabla: "catalogos", fila: item }] });
+        return { item, creado: true };
+      },
+      async listar({ tipo, incluirInactivos = false } = {}) {
+        return (await repo.todas("catalogos"))
+          .filter(
+            (x) => (!tipo || x.tipo === tipo) && (incluirInactivos || x.activa),
+          )
+          .sort((a, b) => a.nombre.localeCompare(b.nombre));
+      },
+      async editar(id, { nombre }, motivo) {
+        const anterior = await exigir(
+          "catalogos",
+          id,
+          "el elemento del catálogo",
+        );
+        const item = validarCatalogo({ ...anterior, nombre: nombre?.trim() });
+        await repo.aplicar({
+          cambios: [
+            { tabla: "catalogos", id, campos: { nombre: item.nombre } },
+          ],
+          altas: [
+            evento("catalogo", id, "editar", MOTIVO(motivo), {
+              antes: anterior.nombre,
+              despues: item.nombre,
+            }),
+          ],
+        });
+        return { item };
+      },
+      async desactivar(id, motivo) {
+        const anterior = await exigir(
+          "catalogos",
+          id,
+          "el elemento del catálogo",
+        );
+        if (!anterior.activa) return { item: anterior };
+        await repo.aplicar({
+          cambios: [{ tabla: "catalogos", id, campos: { activa: 0 } }],
+          altas: [evento("catalogo", id, "desactivar", MOTIVO(motivo))],
+        });
+        return { item: { ...anterior, activa: 0 } };
       },
     },
 
@@ -205,6 +347,57 @@ export function crearApi({
         const g = await exigir("gestiones", id, "la gestión");
         const datos = await repo.cargarTodo();
         const liq = liquidacion(datos, id);
+        const comprasGestion = datos.compras.filter((c) => c.gestion_id === id);
+        const pagosGestion = datos.pagos.filter((p) =>
+          comprasGestion.some((c) => c.id === p.compra_id),
+        );
+        const aplicacionesGestion = datos.aplicaciones.filter(
+          (a) => a.gestion_id === id,
+        );
+        const movimientosGestion = datos.movimientos.filter(
+          (m) => m.gestion_id === id || m.gestion_destino_id === id,
+        );
+        const idsEventos = {
+          gestion: new Set([id]),
+          compra: new Set(comprasGestion.map((x) => x.id)),
+          pago: new Set(pagosGestion.map((x) => x.id)),
+          aplicacion: new Set(aplicacionesGestion.map((x) => x.id)),
+          movimiento: new Set(movimientosGestion.map((x) => x.id)),
+          recepcion: new Set(aplicacionesGestion.map((x) => x.recepcion_id)),
+        };
+        const historial = [
+          ...aplicacionesGestion.map((a) => {
+            const r = datos.recepciones.find((x) => x.id === a.recepcion_id);
+            return {
+              ...a,
+              tipo: a.destino,
+              fecha: r?.fecha,
+              moneda: r?.moneda,
+              parte_id: r?.parte_id,
+              referencia: r?.referencia,
+            };
+          }),
+          ...comprasGestion.map((c) => ({
+            ...c,
+            tipo: "compra",
+            fecha: c.fecha_compra,
+          })),
+          ...pagosGestion.map((p) => ({
+            ...p,
+            tipo: "pago",
+            moneda: comprasGestion.find((c) => c.id === p.compra_id)?.moneda,
+          })),
+          ...movimientosGestion,
+          ...datos.eventos.filter(
+            (e) =>
+              idsEventos[e.entidad]?.has(e.entidad_id) &&
+              e.tipo !== "identidad_registro",
+          ),
+        ].sort(
+          (a, b) =>
+            String(a.fecha).localeCompare(String(b.fecha)) ||
+            String(a.id).localeCompare(String(b.id)),
+        );
         return {
           gestion: { ...g, estado: g.fecha_fin ? "terminada" : "abierta" },
           compras: datos.compras.filter((c) => c.gestion_id === id),
@@ -213,6 +406,7 @@ export function crearApi({
           observaciones: calcularSaldos(datos).observaciones.filter(
             (o) => o.gestion_id === id,
           ),
+          historial,
           eventos: datos.eventos
             .filter((e) => e.entidad === "gestion" && e.entidad_id === id)
             .sort((a, b) => a.fecha.localeCompare(b.fecha)),
@@ -263,8 +457,14 @@ export function crearApi({
           asignaciones = [],
           pagos = [],
           imagenes = [],
+          catalogos = [],
           ...resto
         } = entrada || {};
+        if (
+          !Array.isArray(catalogos) ||
+          new Set(catalogos).size !== catalogos.length
+        )
+          throw validacion("Selección de catálogos inválida.", "catalogos");
         const compra = {
           id,
           fecha_registro: ahora(),
@@ -275,23 +475,18 @@ export function crearApi({
           deudor_id,
           anulada: null,
         };
+        const firma = await identidad({
+          ...compra,
+          fecha_registro: null,
+          anulada: null,
+          asignaciones,
+          pagos,
+          imagenes,
+          ...(catalogos.length ? { catalogos } : {}),
+        });
         const previa = await repo.una("compras", id);
         if (previa) {
-          const mismos = [
-            "fecha_compra",
-            "concepto",
-            "proveedor",
-            "importe",
-            "moneda",
-            "factura",
-            "estado",
-            "gestion_id",
-          ].every((k) => previa[k] === compra[k]);
-          if (!mismos)
-            throw new ErrorApi(
-              "CONFLICTO",
-              "El identificador ya pertenece a otra compra.",
-            );
+          await verificarReintento("compra", id, firma);
           return { compra: previa, creada: false };
         }
         validarCompra(compra);
@@ -303,6 +498,22 @@ export function crearApi({
           if (g.fecha_fin) throw estado("Elegí una gestión abierta.");
         }
         await parteOpcional(deudor_id, "deudor_id");
+        const usosCatalogo = [];
+        for (const catalogoId of catalogos) {
+          const item = await repo.una("catalogos", catalogoId);
+          if (!item || !item.activa)
+            throw validacion(
+              "Un elemento del catálogo no está disponible.",
+              "catalogos",
+            );
+          usosCatalogo.push({
+            id: uuid(),
+            catalogo_id: item.id,
+            compra_id: id,
+            tipo: item.tipo,
+            nombre: item.nombre,
+          });
+        }
         const filasAsig = asignaciones.map((a) =>
           validarMovimientoBasico("asignacion", {
             id: a.id || uuid(),
@@ -335,13 +546,31 @@ export function crearApi({
           });
         });
         const fotos = await prepararImagenes(id, imagenes);
+        repo.alRevertir(() => borrarArchivos(fotos));
         try {
+          const anexosIniciales = imagenes.flatMap((imagen, indice) =>
+            imagen.ajuste
+              ? [
+                  {
+                    tabla: "anexos",
+                    fila: validarAjusteAnexo({
+                      ...imagen.ajuste,
+                      foto_id: fotos[indice].id,
+                      actualizado: ahora(),
+                    }),
+                  },
+                ]
+              : [],
+          );
           await confirmar({
             altas: [
               { tabla: "compras", fila: compra },
               ...fotos.map((f) => ({ tabla: "fotos", fila: f })),
+              ...usosCatalogo.map((fila) => ({ tabla: "catalogo_usos", fila })),
+              ...anexosIniciales,
               ...filasAsig.map((f) => ({ tabla: "asignaciones", fila: f })),
               ...filasPago.map((f) => ({ tabla: "pagos", fila: f })),
+              eventoIdentidad("compra", id, firma),
             ],
           });
         } catch (e) {
@@ -380,6 +609,7 @@ export function crearApi({
         const fotos = datos.fotos.filter((f) => f.compra_id === id);
         return {
           compra,
+          catalogos: datos.catalogo_usos.filter((u) => u.compra_id === id),
           fotos,
           anexos: datos.anexos.filter((a) =>
             fotos.some((f) => f.id === a.foto_id),
@@ -390,6 +620,134 @@ export function crearApi({
             .filter((e) => e.entidad === "compra" && e.entidad_id === id)
             .sort((a, b) => a.fecha.localeCompare(b.fecha)),
         };
+      },
+      /** Corrige únicamente datos descriptivos y conserva el antes en auditoría. */
+      async corregir(id, cambios, motivo) {
+        const compra = await exigir("compras", id, "la compra");
+        if (compra.anulada) throw estado("La compra está anulada.");
+        const permitidos = ["concepto", "proveedor", "factura"];
+        if (
+          !cambios ||
+          typeof cambios !== "object" ||
+          !Object.keys(cambios).length ||
+          !Object.keys(cambios).every((k) => permitidos.includes(k))
+        )
+          throw validacion(
+            "Solo se pueden corregir concepto, proveedor y número de factura.",
+          );
+        const m = MOTIVO(motivo);
+        validarCompra({ ...compra, ...cambios });
+        const antes = Object.fromEntries(
+          Object.keys(cambios).map((k) => [k, compra[k]]),
+        );
+        await confirmar({
+          cambios: [{ tabla: "compras", id, campos: cambios }],
+          altas: [
+            evento("compra", id, "corregir", m, { antes, despues: cambios }),
+          ],
+        });
+        return { compra: { ...compra, ...cambios } };
+      },
+      /** Sustituye la compra sin borrar la original. Los pagos y repartos deben revertirse antes. */
+      async corregirEconomia(
+        id,
+        { id: nuevoId = uuid(), importe, moneda },
+        motivo,
+      ) {
+        const m = MOTIVO(motivo);
+        const d = await repo.cargarTodo();
+        const anterior = d.compras.find((c) => c.id === id);
+        if (!anterior) throw noEncontrado("la compra");
+        if (anterior.anulada) throw estado("La compra ya está anulada.");
+        if (d.compras.some((c) => c.id === nuevoId))
+          throw new ErrorApi(
+            "CONFLICTO",
+            "El identificador de la corrección ya pertenece a otra compra.",
+          );
+        if (
+          d.pagos.some((p) => p.compra_id === id && !p.anulada) ||
+          d.asignaciones.some((a) => a.compra_id === id && !a.anulada)
+        )
+          throw estado(
+            "Primero anulá los pagos y retirá las asignaciones vigentes de esta compra.",
+          );
+        const nueva = validarCompra({
+          ...anterior,
+          id: nuevoId,
+          importe: importe ?? anterior.importe,
+          moneda: moneda ?? anterior.moneda,
+          fecha_registro: ahora(),
+          anulada: null,
+        });
+        const fotosAnteriores = d.fotos.filter((f) => f.compra_id === id);
+        const imagenes = [];
+        for (const f of fotosAnteriores) {
+          const bytes = await files.leer(f.ruta);
+          if ((await huella(bytes)) !== f.sha256)
+            throw new ErrorApi(
+              "INTEGRIDAD",
+              "El comprobante falta o está alterado.",
+            );
+          const anexo = d.anexos.find((a) => a.foto_id === f.id);
+          imagenes.push({
+            bytes,
+            tipo: f.tipo,
+            clase: f.clase,
+            ...(anexo
+              ? {
+                  ajuste: {
+                    rotacion: anexo.rotacion,
+                    enderezar: anexo.enderezar,
+                    recorte: anexo.recorte,
+                  },
+                }
+              : {}),
+          });
+        }
+        const fotos = await prepararImagenes(nuevoId, imagenes);
+        repo.alRevertir(() => borrarArchivos(fotos));
+        const anexos = imagenes.flatMap((imagen, i) =>
+          imagen.ajuste
+            ? [
+                {
+                  tabla: "anexos",
+                  fila: validarAjusteAnexo({
+                    ...imagen.ajuste,
+                    foto_id: fotos[i].id,
+                    actualizado: ahora(),
+                  }),
+                },
+              ]
+            : [],
+        );
+        const usos = d.catalogo_usos
+          .filter((u) => u.compra_id === id)
+          .map((u) => ({ ...u, id: uuid(), compra_id: nuevoId }));
+        const firma = await identidad({
+          ...nueva,
+          fecha_registro: null,
+          anulada: null,
+          asignaciones: [],
+          pagos: [],
+          imagenes,
+          ...(usos.length ? { catalogos: usos.map((u) => u.catalogo_id) } : {}),
+        });
+        const fecha = ahora();
+        await confirmar({
+          cambios: [{ tabla: "compras", id, campos: { anulada: fecha } }],
+          altas: [
+            { tabla: "compras", fila: nueva },
+            ...fotos.map((fila) => ({ tabla: "fotos", fila })),
+            ...anexos,
+            ...usos.map((fila) => ({ tabla: "catalogo_usos", fila })),
+            evento("compra", id, "reemplazada", m, {
+              reemplazada_por: nuevoId,
+            }),
+            evento("compra", nuevoId, "reemplaza", m, { reemplaza_id: id }),
+            eventoIdentidad("compra", nuevoId, firma),
+          ],
+        });
+        return { compra: nueva, original: { ...anterior, anulada: fecha } };
       },
       /** Anular no borra: la compra, sus pagos y asignaciones quedan con fecha y motivo. */
       async anular(id, motivo) {
@@ -526,20 +884,22 @@ export function crearApi({
           parte_id,
           anulada: null,
         });
+        const firma = await identidad({
+          ...p,
+          fecha_registro: null,
+          anulada: null,
+        });
         const previo = await repo.una("pagos", id);
         if (previo) {
-          if (
-            previo.compra_id !== compra_id ||
-            previo.importe !== importe ||
-            previo.origen !== origen
-          )
-            throw new ErrorApi(
-              "CONFLICTO",
-              "El identificador ya pertenece a otro pago.",
-            );
+          await verificarReintento("pago", id, firma);
           return { pago: previo, creado: false };
         }
-        await confirmar({ altas: [{ tabla: "pagos", fila: p }] });
+        await confirmar({
+          altas: [
+            { tabla: "pagos", fila: p },
+            eventoIdentidad("pago", id, firma),
+          ],
+        });
         return { pago: p, creado: true };
       },
       async anular(id, motivo) {
@@ -589,17 +949,15 @@ export function crearApi({
           referencia,
           anulada: null,
         });
+        const firma = await identidad({
+          ...r,
+          fecha_registro: null,
+          anulada: null,
+          aplicaciones,
+        });
         const previa = await repo.una("recepciones", id);
         if (previa) {
-          if (
-            previa.importe !== importe ||
-            previa.parte_id !== parte_id ||
-            previa.moneda !== moneda
-          )
-            throw new ErrorApi(
-              "CONFLICTO",
-              "El identificador ya pertenece a otra recepción.",
-            );
+          await verificarReintento("recepcion", id, firma);
           return { recepcion: previa, creada: false };
         }
         const filas = await filasAplicacion(id, aplicaciones);
@@ -607,6 +965,7 @@ export function crearApi({
           altas: [
             { tabla: "recepciones", fila: r },
             ...filas.map((f) => ({ tabla: "aplicaciones", fila: f })),
+            eventoIdentidad("recepcion", id, firma),
           ],
         });
         return { recepcion: r, aplicaciones: filas, creada: true };
@@ -890,15 +1249,17 @@ export function crearApi({
       anulada: null,
     });
     const previo = await repo.una("movimientos", m.id);
+    const firma = await identidad(m);
     if (previo) {
-      if (previo.importe !== m.importe || previo.tipo !== m.tipo)
-        throw new ErrorApi(
-          "CONFLICTO",
-          "El identificador ya pertenece a otro movimiento.",
-        );
+      await verificarReintento("movimiento", m.id, firma);
       return { movimiento: previo, creado: false };
     }
-    await confirmar({ altas: [{ tabla: "movimientos", fila }] });
+    await confirmar({
+      altas: [
+        { tabla: "movimientos", fila },
+        eventoIdentidad("movimiento", m.id, firma),
+      ],
+    });
     return { movimiento: fila, creado: true };
   }
   api.informes = servicioInformes({
@@ -910,21 +1271,39 @@ export function crearApi({
     uuid,
   });
   api.respaldo = servicioRespaldo({ repo, files, informesPrivados });
-  return envolverTodo(api);
+  return envolverTodo(api, repo);
 }
 /** Toda operación sale con ErrorApi, nunca con un error interno sin traducir. */
-function envolverTodo(objeto) {
+function envolverTodo(objeto, repo, ruta = "") {
   const r = {};
   for (const [k, v] of Object.entries(objeto)) {
+    const nombre = ruta ? `${ruta}.${k}` : k;
     if (typeof v === "function")
       r[k] = async (...args) => {
         try {
-          return await v(...args);
+          const financieras = [
+            "compras.registrar",
+            "compras.anular",
+            "compras.asignar",
+            "compras.corregir",
+            "compras.corregirEconomia",
+            "compras.clasificarPago",
+            "pagos.registrar",
+            "pagos.anular",
+            "fondos.recibir",
+            "fondos.aplicar",
+            "fondos.devolver",
+            "fondos.trasladar",
+            "fondos.anular",
+          ];
+          return financieras.includes(nombre)
+            ? await repo.transaccion(() => v(...args))
+            : await repo.exclusiva(() => v(...args));
         } catch (e) {
           throw traducir(e);
         }
       };
-    else if (v && typeof v === "object") r[k] = envolverTodo(v);
+    else if (v && typeof v === "object") r[k] = envolverTodo(v, repo, nombre);
     else r[k] = v;
   }
   return r;
