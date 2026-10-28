@@ -133,6 +133,7 @@ const repo = ref(null),
   reapertura = ref({ id: "", motivo: "" }),
   anulacionMovimiento = ref({ tipo: "", id: "", motivo: "" }),
   gestionDetalle = ref(null),
+  cuentasDetalle = ref([]),
   fotos = ref([]),
   vistas = ref([]),
   editor = ref(null),
@@ -453,9 +454,7 @@ async function recibirDinero() {
     i.id = crypto.randomUUID();
     await cargar();
     mensaje.value =
-      i.destino === "anticipo"
-        ? "Dinero recibido. Revisá el importe asignado y el que queda sin aplicar."
-        : "Reembolso registrado en la gestión.";
+      "Entrada registrada. Revisá sus aplicaciones y el importe que queda sin aplicar.";
   });
 }
 async function aplicarDinero() {
@@ -486,10 +485,16 @@ async function anularMovimiento() {
     else await api.fondos.anular(a.tipo, a.id, a.motivo);
     anulacionMovimiento.value = { tipo: "", id: "", motivo: "" };
     await cargar();
-    if (gestionDetalle.value)
+    if (gestionDetalle.value) {
       gestionDetalle.value = await api.gestiones.detalle(
         gestionDetalle.value.gestion.id,
       );
+      cuentasDetalle.value = (
+        await api.saldos.cuentas({
+          gestion_id: gestionDetalle.value.gestion.id,
+        })
+      ).cuentas;
+    }
     if (seleccion.value) await actualizarDetalle();
     mensaje.value = "Operación anulada; se conserva su historial.";
   });
@@ -748,6 +753,9 @@ async function reabrirGestion() {
 async function verGestion(id) {
   await operacion(async () => {
     gestionDetalle.value = await api.gestiones.detalle(id);
+    cuentasDetalle.value = (
+      await api.saldos.cuentas({ gestion_id: id })
+    ).cuentas;
     ir("gestion-detalle");
   });
 }
@@ -1856,10 +1864,58 @@ async function restaurar(event) {
             class="purchase"
             @click="ver(c)"
           >
-            <span>{{ c.concepto }} · {{ c.proveedor }}</span
+            <span
+              >{{ c.concepto }} · {{ c.proveedor
+              }}<span v-if="c.anulada"> · Anulada</span></span
             ><strong>{{ dinero(c.importe, c.moneda) }}</strong>
           </button>
           <h3>Dinero</h3>
+          <p class="hint">
+            Cada grupo representa una persona o empresa y una sola moneda. Las
+            compras sin reparto se muestran aparte.
+          </p>
+          <div
+            v-for="c in cuentasDetalle"
+            :key="`${c.gestion_id}-${c.parte_id}-${c.moneda}`"
+            class="gestion-item"
+          >
+            <strong
+              >{{
+                partesTodas.find((p) => p.id === c.parte_id)?.nombre ||
+                "Sin destino asignado"
+              }}
+              · {{ c.moneda }}</strong
+            >
+            <p>
+              Recibido para esta gestión: {{ dinero(c.recibido, c.moneda) }}
+            </p>
+            <p>
+              Gastos registrados: {{ dinero(c.gastos_registrados, c.moneda) }}
+            </p>
+            <p>
+              Pagado con fondos recibidos: {{ dinero(c.usado_fondo, c.moneda) }}
+            </p>
+            <p>
+              Dinero todavía en custodia: {{ dinero(c.custodia, c.moneda) }}
+            </p>
+            <p>
+              Dinero propio aportado: {{ dinero(c.aportado_propio, c.moneda) }}
+            </p>
+            <p>Por reembolsar: {{ dinero(c.por_reembolsar, c.moneda) }}</p>
+            <p>
+              Por pagar a proveedores: {{ dinero(c.deuda_proveedor, c.moneda) }}
+            </p>
+            <p v-if="c.por_regularizar">
+              Por regularizar: {{ dinero(c.por_regularizar, c.moneda) }}
+            </p>
+            <p v-if="c.devuelto">
+              Devuelto: {{ dinero(c.devuelto, c.moneda) }}
+            </p>
+            <p v-if="c.traslado_entrada || c.traslado_salida">
+              Trasladado: recibió {{ dinero(c.traslado_entrada, c.moneda) }} ·
+              salió {{ dinero(c.traslado_salida, c.moneda) }}
+            </p>
+          </div>
           <p v-if="!gestionDetalle.saldos.length" class="hint">
             Sin saldos pendientes.
           </p>
@@ -1993,25 +2049,32 @@ async function restaurar(event) {
             </div>
             <div v-if="paso === 4" class="step-fields">
               <label
-                >¿Cómo se paga esta compra?<select v-model="pago.tipo">
-                  <option value="sin_detalle">Todavía sin detallar</option>
-                  <option value="fondo">Con dinero recibido</option>
-                  <option value="propio">Con mi dinero, por reembolsar</option>
+                >¿Quién pagó esta compra?<select v-model="pago.tipo">
+                  <option value="propio">Yo, con mi dinero</option>
+                  <option value="personal">Yo, es un gasto personal</option>
+                  <option value="fondo">Usé dinero que me entregaron</option>
+                  <option value="credito">El proveedor dio crédito</option>
                   <option value="combinado">
-                    Dinero recibido y aporte propio
+                    Una parte con dinero recibido y otra con mi dinero
                   </option>
-                  <option value="credito">A crédito con el proveedor</option>
                   <option value="avanzado">
                     Repartir entre varias personas y pagos
+                  </option>
+                  <option value="sin_detalle">
+                    Todavía no quiero indicar el pago
                   </option>
                 </select></label
               >
               <label
-                v-if="pago.tipo !== 'sin_detalle' && pago.tipo !== 'avanzado'"
+                v-if="
+                  !['sin_detalle', 'avanzado', 'personal'].includes(pago.tipo)
+                "
                 >{{
                   pago.tipo === "credito"
                     ? "Quién debe al proveedor"
-                    : "Persona o empresa de la compra"
+                    : pago.tipo === "propio"
+                      ? "Quién debe reembolsarte"
+                      : "De quién son los fondos"
                 }}<select v-model="pago.parte_id" required>
                   <option value="">Elegí una persona o empresa</option>
                   <option v-for="p in partes" :key="p.id" :value="p.id">
@@ -2020,7 +2083,10 @@ async function restaurar(event) {
                 </select></label
               >
               <p
-                v-if="pago.tipo !== 'sin_detalle' && !partes.length"
+                v-if="
+                  !['sin_detalle', 'personal'].includes(pago.tipo) &&
+                  !partes.length
+                "
                 class="hint"
               >
                 Primero agregá la persona o empresa en «Recibir dinero».
@@ -2346,7 +2412,7 @@ async function restaurar(event) {
           >
             <p class="hint">
               La compra original se conserva anulada. Primero anulá sus pagos y
-              retirás sus asignaciones vigentes; después registrá de nuevo los
+              retirá sus asignaciones vigentes; después registrá de nuevo los
               pagos que correspondan.
             </p>
             <label
@@ -2663,9 +2729,15 @@ async function restaurar(event) {
                 <option value="a4">A4</option>
               </select></label
             ><label
-              >Presentación<select v-model="informeForm.estilo">
+              >Presentación<select
+                v-model="informeForm.estilo"
+                @change="
+                  informeForm.estilo === 'formal' &&
+                  (informeForm.incluirFotos = true)
+                "
+              >
                 <option value="ejecutivo">Ejecutivo moderno</option>
-                <option value="formal">Formal para impresión</option>
+                <option value="formal">Detallado para impresión</option>
               </select></label
             ><label class="check"
               ><input
@@ -2872,9 +2944,15 @@ async function restaurar(event) {
                 <option value="a4">A4</option>
               </select></label
             ><label
-              >Estilo<select v-model="informeGeneral.estilo">
+              >Estilo<select
+                v-model="informeGeneral.estilo"
+                @change="
+                  informeGeneral.estilo === 'formal' &&
+                  (informeGeneral.incluirFotos = true)
+                "
+              >
                 <option value="ejecutivo">Ejecutivo</option>
-                <option value="formal">Formal</option>
+                <option value="formal">Detallado para impresión</option>
               </select></label
             >
             <label class="check"

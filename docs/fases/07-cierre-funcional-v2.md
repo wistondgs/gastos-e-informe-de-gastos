@@ -14,4 +14,8 @@ Probar migración de esquema y respaldo histórico, invariantes financieras, ope
 
 ## 3. Cierre
 
-En curso.
+Trabajo parcial entregado; G1–G5 permanecen pendientes según la matriz existente. Se incorporaron catálogos, edición de nombres y roles derivados, correcciones económicas, navegación en historial y cámara posterior; los controles nativos siguen sin validación.
+
+Los cortes históricos excluyen sustituciones, anexos y aplicaciones posteriores cuando existen eventos fechados; también reconstruyen ajustes y nombres anteriores. Las operaciones antiguas pueden carecer de eventos suficientes, y un reparto posterior no reconstruible se rechaza. No se garantiza la reconstrucción de todos los registros históricos.
+
+Durante la ejecución apareció el commit `05b428d8c061b8ce6a3382c152dd61451bb6e993`, que incluye el árbol previo; los cambios posteriores quedan sin commit. No se modificaron datos del teléfono ni se instaló una APK. Las pruebas Android, el cierre forzado y la actualización conservando datos están pendientes.

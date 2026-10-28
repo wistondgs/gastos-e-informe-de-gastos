@@ -7,6 +7,7 @@
 import { validarCompra, MONEDAS } from "../dominio/compra.js";
 import { validarGestion, fechaValida } from "../dominio/gestion.js";
 import { validarCatalogo } from "../dominio/catalogos.js";
+import { estadoCuentas } from "../dominio/estado-cuentas.js";
 import { verificarImagen } from "../dominio/operaciones.js";
 import {
   calcularSaldos,
@@ -658,7 +659,29 @@ export function crearApi({
         const d = await repo.cargarTodo();
         const anterior = d.compras.find((c) => c.id === id);
         if (!anterior) throw noEncontrado("la compra");
-        if (anterior.anulada) throw estado("La compra ya está anulada.");
+        if (anterior.anulada) {
+          const eventoPrevio = d.eventos.find(
+            (e) =>
+              e.entidad === "compra" &&
+              e.entidad_id === id &&
+              e.tipo === "reemplazada" &&
+              JSON.parse(e.datos).reemplazada_por === nuevoId,
+          );
+          const previa = d.compras.find((c) => c.id === nuevoId);
+          if (eventoPrevio && previa) {
+            if (
+              previa.importe !== (importe ?? anterior.importe) ||
+              previa.moneda !== (moneda ?? anterior.moneda) ||
+              eventoPrevio.motivo !== m
+            )
+              throw new ErrorApi(
+                "CONFLICTO",
+                "La corrección ya existe con otro contenido.",
+              );
+            return { compra: previa, original: anterior, creada: false };
+          }
+          throw estado("La compra ya está anulada.");
+        }
         if (d.compras.some((c) => c.id === nuevoId))
           throw new ErrorApi(
             "CONFLICTO",
@@ -975,8 +998,23 @@ export function crearApi({
         const r = await exigir("recepciones", recepcion_id, "la recepción");
         if (r.anulada) throw estado("La recepción está anulada.");
         const filas = await filasAplicacion(recepcion_id, aplicaciones);
+        const eventos = [];
+        for (const fila of filas)
+          if (!(await repo.una("aplicaciones", fila.id)))
+            eventos.push(
+              evento(
+                "aplicacion",
+                fila.id,
+                "aplicar",
+                "Dinero aplicado posteriormente",
+                { recepcion_id, gestion_id: fila.gestion_id },
+              ),
+            );
         await confirmar({
-          altas: filas.map((f) => ({ tabla: "aplicaciones", fila: f })),
+          altas: [
+            ...filas.map((f) => ({ tabla: "aplicaciones", fila: f })),
+            ...eventos,
+          ],
         });
         return { aplicaciones: filas };
       },
@@ -1074,6 +1112,10 @@ export function crearApi({
     },
 
     saldos: {
+      async cuentas({ gestion_id } = {}) {
+        if (gestion_id) await exigir("gestiones", gestion_id, "la gestión");
+        return { cuentas: estadoCuentas(await repo.cargarTodo(), gestion_id) };
+      },
       /** Los saldos distintos de cero, filtrables; nunca un neto que los mezcle. */
       async consultar({ gestion_id, parte_id, moneda, corte = null } = {}) {
         if (corte !== null && !fechaValida(corte))
@@ -1111,6 +1153,13 @@ export function crearApi({
           await repo.aplicar({
             altas: [
               ...fotos.map((f) => ({ tabla: "fotos", fila: f })),
+              evento(
+                "compra",
+                compra_id,
+                "adjuntar",
+                "Comprobantes agregados",
+                { fotos: fotos.map((f) => f.id) },
+              ),
               ...(pasa
                 ? [
                     evento(

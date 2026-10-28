@@ -75,6 +75,21 @@ test("corrección económica conserva el original, sus fotos y traza la sustituc
         JSON.parse(e.datos).reemplaza_id === "original",
     ),
   );
+  const repetida = await api.compras.corregirEconomia(
+    "original",
+    { id: "corregida", importe: 1200000 },
+    "Importe equivocado",
+  );
+  assert.equal(repetida.compra.id, "corregida");
+  await assert.rejects(
+    () =>
+      api.compras.corregirEconomia(
+        "original",
+        { id: "corregida", importe: 1300000 },
+        "Importe equivocado",
+      ),
+    (e) => e.codigo === "CONFLICTO",
+  );
 });
 
 test("no corrige económicamente una compra con pagos sin revertirlos", async () => {

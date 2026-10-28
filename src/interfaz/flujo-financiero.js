@@ -17,6 +17,12 @@ export function prepararAplicaciones(filas) {
 export function prepararCompraFinanciera(compra, seleccion) {
   const { tipo, parte_id: parteId, fondo } = seleccion;
   if (tipo === "sin_detalle") return { ...compra, forma_pago: "sin_detalle" };
+  if (tipo === "personal")
+    return {
+      ...compra,
+      forma_pago: "contado",
+      pagos: [{ origen: "propio", importe: compra.importe }],
+    };
   if (tipo === "avanzado") {
     const forma_pago = seleccion.forma_pago;
     if (!["contado", "credito"].includes(forma_pago))

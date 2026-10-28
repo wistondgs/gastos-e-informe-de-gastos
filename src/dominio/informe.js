@@ -1,4 +1,5 @@
 import { fechaValida } from "./gestion.js";
+import { vigente } from "./finanzas.js";
 export const PAPELES = { carta: [612, 792], a4: [595.28, 841.89] };
 export const ESTILOS = ["ejecutivo", "formal"];
 export const TIPOS_INFORME = {
@@ -114,7 +115,7 @@ export function prepararInforme(contexto, opciones) {
       throw new Error("Un informe por destinatario solo lleva lo asignado.");
     if (fotos.some((f) => f.compra_id !== compra.id))
       throw new Error("Un comprobante no corresponde a su compra.");
-    if (compra.anulada)
+    if (!vigente(compra, opciones.corte))
       throw new Error("Una compra anulada no va en el detalle.");
   }
   const incluidas = items

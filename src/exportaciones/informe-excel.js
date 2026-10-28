@@ -8,9 +8,19 @@ const seguro = (v) => {
 const SIMBOLO = { NIO: "C$", USD: "US$" };
 const formato = (m) => `"${SIMBOLO[m]}" #,##0.00`;
 function hoja(libro, nombre, columnas) {
-  const h = libro.addWorksheet(nombre);
+  const h = libro.addWorksheet(nombre, {
+    pageSetup: {
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      orientation: "landscape",
+      paperSize: 1,
+    },
+  });
   h.columns = columnas.map(([header, width]) => ({ header, width }));
   h.getRow(1).font = { bold: true };
+  h.getRow(1).alignment = { wrapText: true, vertical: "middle" };
+  h.getRow(1).height = 30;
   h.views = [{ state: "frozen", ySplit: 1 }];
   return h;
 }
@@ -20,7 +30,15 @@ export async function informeExcel(modelo) {
   const libro = new ExcelJS.Workbook();
   libro.creator = "Gastos e Informe de Gastos";
   libro.created = libro.modified = new Date(o.generado);
-  const resumen = libro.addWorksheet("Resumen");
+  const resumen = libro.addWorksheet("Resumen", {
+    pageSetup: {
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0,
+      orientation: "landscape",
+      paperSize: 1,
+    },
+  });
   resumen.columns = [{ width: 26 }, { width: 50 }, { width: 12 }];
   const filas = [
     ["Informe", seguro(o.titulo)],

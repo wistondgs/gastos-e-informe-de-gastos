@@ -1,5 +1,10 @@
 import { huella } from "../datos/archivos.js";
-import { calcularSaldos, liquidacion } from "../dominio/finanzas.js";
+import {
+  calcularSaldos,
+  liquidacion,
+  vigente,
+  compraVigente,
+} from "../dominio/finanzas.js";
 import { fechaValida } from "../dominio/gestion.js";
 import {
   claveAlcance,
@@ -33,6 +38,91 @@ async function contexto(
   { corte, compras: elegidas, incluirFotos },
 ) {
   const datos = await repo.cargarTodo();
+  const fotosPosteriores = new Set();
+  for (const e of datos.eventos.filter(
+    (x) => x.entidad === "compra" && x.fecha.slice(0, 10) > corte,
+  )) {
+    if (e.tipo === "adjuntar") {
+      let ids;
+      try {
+        ids = JSON.parse(e.datos).fotos;
+      } catch {
+        throw new ErrorApi(
+          "INTEGRIDAD",
+          "No se puede reconstruir el historial de comprobantes.",
+        );
+      }
+      if (!Array.isArray(ids))
+        throw new ErrorApi(
+          "INTEGRIDAD",
+          "No se puede reconstruir el historial de comprobantes.",
+        );
+      for (const id of ids) fotosPosteriores.add(id);
+    }
+    if (e.tipo === "comprobante") {
+      const anterior = JSON.parse(e.datos).estado_anterior;
+      const compra = datos.compras.find((c) => c.id === e.entidad_id);
+      if (compra && anterior) compra.estado = anterior;
+    }
+  }
+  datos.fotos = datos.fotos.filter((foto) => !fotosPosteriores.has(foto.id));
+  function ajusteAlCorte(fotoId) {
+    let ajuste = datos.anexos.find((a) => a.foto_id === fotoId) || null;
+    const eventos = datos.eventos
+      .filter(
+        (e) =>
+          e.entidad === "anexo" &&
+          e.entidad_id === fotoId &&
+          e.tipo === "ajustar" &&
+          e.fecha.slice(0, 10) > corte,
+      )
+      .sort((a, b) => b.fecha.localeCompare(a.fecha));
+    for (const evento of eventos) {
+      try {
+        ajuste = JSON.parse(evento.datos).antes;
+      } catch {
+        throw new ErrorApi(
+          "INTEGRIDAD",
+          "No se puede reconstruir un ajuste histórico.",
+        );
+      }
+      if (!ajuste || typeof ajuste !== "object")
+        throw new ErrorApi(
+          "INTEGRIDAD",
+          "No se puede reconstruir un ajuste histórico.",
+        );
+    }
+    return ajuste?.actualizado?.slice(0, 10) > corte ? null : ajuste;
+  }
+  // Las correcciones descriptivas registran el antes: retrocederlas en orden
+  // inverso permite presentar los valores que estaban vigentes al corte.
+  for (const e of datos.eventos
+    .filter(
+      (x) =>
+        x.fecha.slice(0, 10) > corte &&
+        ((x.entidad === "compra" && x.tipo === "corregir") ||
+          (x.entidad === "parte" && x.tipo === "editar")),
+    )
+    .sort((a, b) => b.fecha.localeCompare(a.fecha))) {
+    let antes;
+    try {
+      antes = JSON.parse(e.datos).antes;
+    } catch {
+      throw new ErrorApi(
+        "INTEGRIDAD",
+        "No se puede reconstruir una corrección histórica.",
+      );
+    }
+    if (!antes || typeof antes !== "object")
+      throw new ErrorApi(
+        "INTEGRIDAD",
+        "No se puede reconstruir una corrección histórica.",
+      );
+    const fila = (e.entidad === "compra" ? datos.compras : datos.partes).find(
+      (x) => x.id === e.entidad_id,
+    );
+    if (fila) Object.assign(fila, antes);
+  }
   const gestiones = new Map(datos.gestiones.map((g) => [g.id, g]));
   const partes = new Map(datos.partes.map((p) => [p.id, p]));
   const nombreParte = (id) =>
@@ -46,7 +136,9 @@ async function contexto(
     return ids;
   };
   let lineas, deAlcance, gestionesAlcance;
-  const vigentes = datos.compras.filter((c) => !c.anulada);
+  const vigentes = datos.compras.filter(
+    (c) => compraVigente(c, corte, datos.eventos) && c.fecha_compra <= corte,
+  );
   switch (alcance?.tipo) {
     case "gestion": {
       const g = gestiones.get(alcance.gestion_id);
@@ -118,7 +210,7 @@ async function contexto(
       ];
       const conCargo = new Set(
         datos.asignaciones
-          .filter((a) => !a.anulada && a.parte_id === p.id)
+          .filter((a) => vigente(a, corte) && a.parte_id === p.id)
           .map((a) => a.compra_id),
       );
       deAlcance = (c) =>
@@ -166,6 +258,22 @@ async function contexto(
     default:
       throw validacion("Tipo de informe desconocido.", "tipo");
   }
+  const repartoPosterior = datos.eventos.some(
+    (e) =>
+      e.entidad === "compra" &&
+      e.tipo === "asignar" &&
+      e.fecha.slice(0, 10) > corte &&
+      vigentes.some(
+        (c) =>
+          c.id === e.entidad_id &&
+          deAlcance(c) &&
+          (!Array.isArray(elegidas) || elegidas.includes(c.id)),
+      ),
+  );
+  if (repartoPosterior)
+    throw estado(
+      "No se puede reconstruir con certeza el reparto histórico para este corte; consultá una revisión emitida anteriormente.",
+    );
   let elegibles = vigentes.filter(deAlcance);
   if (Array.isArray(elegidas)) {
     const ids = new Set(elegidas);
@@ -177,7 +285,7 @@ async function contexto(
       .filter((f) => f.compra_id === compra.id)
       .sort((a, b) => a.id.localeCompare(b.id));
     const asig = datos.asignaciones.filter(
-      (a) => !a.anulada && a.compra_id === compra.id,
+      (a) => vigente(a, corte) && a.compra_id === compra.id,
     );
     const item = {
       compra,
@@ -208,7 +316,7 @@ async function contexto(
           );
         item.dims[f.id] = dimensiones(bytes, f.tipo);
         item.ajustes[f.id] = ajusteEfectivo(
-          datos.anexos.find((a) => a.foto_id === f.id),
+          ajusteAlCorte(f.id),
           orientacionExif(bytes, f.tipo),
         );
       }

@@ -29,8 +29,18 @@ const falla = (mensaje, campo = null) => {
 };
 const ID = /^[a-zA-Z0-9-]{1,80}$/;
 const entero = (n) => Number.isSafeInteger(n) && n > 0 && n <= 99999999999;
-const vigente = (fila, corte) =>
+export const vigente = (fila, corte) =>
   !fila.anulada || (corte && fila.anulada.slice(0, 10) > corte);
+export const compraVigente = (fila, corte, eventos = []) =>
+  vigente(fila, corte) &&
+  (!corte ||
+    !eventos.some(
+      (e) =>
+        e.entidad === "compra" &&
+        e.entidad_id === fila.id &&
+        e.tipo === "reemplaza" &&
+        e.fecha.slice(0, 10) > corte,
+    ));
 const dentro = (fecha, corte) => !corte || fecha.slice(0, 10) <= corte;
 
 export function validarParte(p) {
@@ -60,7 +70,7 @@ function indexar(d, corte) {
     new Map((lista || []).filter(f).map((x) => [x.id, x]));
   const compras = por(
     d.compras,
-    (c) => vigente(c, corte) && dentro(c.fecha_compra, corte),
+    (c) => compraVigente(c, corte, d.eventos) && dentro(c.fecha_compra, corte),
   );
   const asignaciones = (d.asignaciones || []).filter(
     (a) => vigente(a, corte) && compras.has(a.compra_id),
@@ -74,7 +84,17 @@ function indexar(d, corte) {
     (r) => vigente(r, corte) && dentro(r.fecha, corte),
   );
   const aplicaciones = (d.aplicaciones || []).filter(
-    (a) => vigente(a, corte) && recepciones.has(a.recepcion_id),
+    (a) =>
+      vigente(a, corte) &&
+      recepciones.has(a.recepcion_id) &&
+      (!corte ||
+        !(d.eventos || []).some(
+          (e) =>
+            e.entidad === "aplicacion" &&
+            e.entidad_id === a.id &&
+            e.tipo === "aplicar" &&
+            e.fecha.slice(0, 10) > corte,
+        )),
   );
   const movimientos = (d.movimientos || []).filter(
     (m) => vigente(m, corte) && dentro(m.fecha, corte),
