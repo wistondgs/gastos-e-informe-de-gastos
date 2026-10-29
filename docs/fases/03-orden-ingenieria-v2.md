@@ -1,5 +1,7 @@
 # Ficha de fase · Orden de ingeniería V2 (funcionalidad, datos, finanzas, documentos y respaldo)
 
+> **Nota del 2026-10-29:** ficha histórica. Su numeración de gates no coincide con la de la matriz vigente (conflicto C-3 en [`ESTADO_ACTUAL.md`](../ESTADO_ACTUAL.md#8-contradicciones-registradas)).
+
 ## 0. Errores y guardas aplicables
 
 - **Entradas revisadas:** E-01 a E-05 al empezar; E-06 a E-09 nacieron en esta fase.
