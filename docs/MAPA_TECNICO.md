@@ -17,7 +17,7 @@ interfaz (Vue/Quasar)  →  API local (única puerta)  →  dominio (reglas y c�
                          exportaciones (PDF, Excel) y documentos (anexos)
 ```
 
-La interfaz nunca escribe en la base: todo pasa por `crearApi` ([`src/api/index.js`](../src/api/index.js)).
+Todas las operaciones de dinero pasan por `crearApi` ([`src/api/index.js`](../src/api/index.js)). **Excepción:** la interfaz también usa el repositorio directamente para algunas lecturas y para guardar los ajustes del informe (ver §3.2).
 
 ## 2. Entrada y arranque
 
@@ -58,6 +58,15 @@ Son las 13 de la lista `financieras` de `envolverTodo`. Corren dentro de `repo.t
 
 Las demás escrituras (partes, catálogos, gestiones, fotos y ajustes de anexos) van por `repo.exclusiva` y llaman a `repo.aplicar` directamente, sin recalcular saldos.
 
+### 3.2 Accesos de la interfaz que no pasan por la API
+
+`App.vue` recibe el repositorio al abrir (`repo.value = abierta.repo`) y lo usa sin pasar por la API:
+
+- **Lecturas:** `repo.compras()`, `repo.gestiones()`, `repo.fotos(id)`, `repo.ajustes()`.
+- **Escrituras:** `repo.guardarAjustes({...})` y `repo.guardarAjuste(texto)` (encabezado, responsable y destinatario del informe; tabla `ajustes`, en [`datos/base.js`](../src/datos/base.js)).
+
+No tocan tablas financieras, pero estas escrituras no generan `eventos` ni pasan por `ErrorApi`. Se documenta como está; cambiarlo corresponde a una fase autorizada.
+
 ## 4. Flujo económico
 
 **Recepción → Aplicación → Compra → Pago → Saldo → Reembolso, devolución o crédito → Informe**
@@ -67,8 +76,9 @@ Las demás escrituras (partes, catálogos, gestiones, fotos y ajustes de anexos)
 | Recepción de dinero | `fondos.recibir` | `recepciones` | `validarMovimientoBasico("recepcion")` |
 | Aplicación a una gestión (anticipo) o reembolso | `fondos.aplicar(recepcion_id, aplicaciones)` | `aplicaciones` (`destino`: `anticipo` o `reembolso`) | `calcularSaldos`: no aplicar más que lo recibido |
 | Compra | `compras.registrar` (`forma_pago`: `contado`, `credito`, `sin_detalle`) | `compras`, `fotos`, `asignaciones` | `validarCompra` ([`dominio/compra.js`](../src/dominio/compra.js)), `guardarCompra` ([`dominio/operaciones.js`](../src/dominio/operaciones.js)) |
-| Reparto entre partes o gestiones | `compras.asignar` | `asignaciones` | `calcularSaldos` |
-| Pago | `pagos.registrar` (`origen`: `fondo` o `propio`) | `pagos` | `calcularSaldos`: un fondo no paga más de su custodia; crédito con deudor; `sin_detalle` no admite pagos |
+| Reparto de una compra entre partes | `compras.asignar(id, asignaciones)`; cada asignación lleva `parte_id` (o `null`, ámbito personal) e `importe`, **dentro de la gestión de la compra** | `asignaciones` | `calcularSaldos`: si hay asignaciones, deben sumar **exactamente** el importe de la compra |
+| Reparto de una entrada entre gestiones | `fondos.aplicar` con varias aplicaciones de la misma recepción (no `compras.asignar`) | `aplicaciones` | no aplicar más que lo recibido |
+| Pago | `pagos.registrar`; `origen`: `fondo` (resta custodia de esa parte), `propio` (suma `por_reembolsar` a la parte imputada) o `tercero` (otra parte pagó directo: exige `parte_id` y **no mueve ningún saldo**) | `pagos` | `calcularSaldos`: un fondo no paga más de su custodia ni el gasto de otra parte; crédito con deudor; `sin_detalle` no admite pagos |
 | Saldo | `saldos.consultar`, `saldos.cuentas`, `saldos.liquidacion` | — (derivado) | `calcularSaldos`, `estadoCuentas`, `liquidacion` |
 | Devolución | `fondos.devolver` | `movimientos` (`tipo: devolucion`) | la custodia no queda negativa |
 | Traslado entre gestiones | `fondos.trasladar` | `movimientos` (`tipo: traslado`) | gestión de destino distinta y existente |

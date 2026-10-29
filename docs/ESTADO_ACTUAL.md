@@ -47,9 +47,9 @@ Todas las pruebas usan SQL.js y datos sintéticos; ninguna ejecuta el SQLite nat
 
 ## 5. Gates
 
-Según la [matriz](MATRIZ_FINALIZACION_V2.md#gates-de-aceptación): **G1 Finanzas, G2 Funcionalidad, G3 Documentos, G4 Persistencia y G5 Android: todas pendientes.** Ninguna cerrada.
+Numeración oficial: **G1–G5 de la [matriz](MATRIZ_FINALIZACION_V2.md#gates-de-aceptación)**. **G1 Finanzas, G2 Funcionalidad, G3 Documentos, G4 Persistencia y G5 Android: todas pendientes.** Ninguna cerrada.
 
-La [ficha 03](fases/03-orden-ingenieria-v2.md) usa otra numeración (Gate 1 Datos … Gate 5 Android). Ver el conflicto C-3 en [§8](#8-contradicciones-registradas).
+La [ficha 03](fases/03-orden-ingenieria-v2.md) usa otra numeración (Gate 1 Datos … Gate 5 Android), que queda como histórica (C-3).
 
 ## 6. Bloqueadores reales
 
@@ -70,8 +70,9 @@ La [ficha 03](fases/03-orden-ingenieria-v2.md) usa otra numeración (Gate 1 Dato
 |---|---|---|
 | C-1 | El README decía «esquema 4»; el código publicado tiene `VERSION_ESQUEMA = 5` | Corregido en el README |
 | C-2 | [`PENDIENTES_APLICACION.md`](PENDIENTES_APLICACION.md) dice que faltan el reparto entre gestiones, el historial, los pagos posteriores y las anulaciones; la matriz los marca «Conectado» con pruebas que existen (`flujo-reparto`, `historial-financiero`) | Se anotó en ese archivo que su estado es anterior y que manda la matriz |
-| C-3 | Dos numeraciones de gates: ficha 03 (Datos, Finanzas, Documentos, Recuperación, Android) y matriz (Finanzas, Funcionalidad, Documentos, Persistencia, Android) | **Pendiente del propietario.** Se toma la matriz como referencia vigente; la ficha 03 se conserva como histórica |
+| C-3 | Dos numeraciones de gates: ficha 03 (Datos, Finanzas, Documentos, Recuperación, Android) y matriz (Finanzas, Funcionalidad, Documentos, Persistencia, Android) | Resuelto (2026-10-29): la numeración oficial es G1–G5 de la matriz; la ficha 03 se conserva como histórica |
 | C-4 | La [auditoría del 28-10](../Auditoria_exhaustiva_Gastos_e_Informe_V2_2026-10-28.md) dice que la interfaz no expone fondos ni anticipos; la matriz posterior los da por conectados | No es contradicción: la auditoría revisó una APK anterior (`3547c34`). Se conserva como histórica |
+| C-6 | El README y el mapa decían que la interfaz solo accede a los datos por la API; `App.vue` lee y escribe ajustes directamente en el repositorio | Corregido en ambos ([MAPA_TECNICO.md §3.2](MAPA_TECNICO.md#32-accesos-de-la-interfaz-que-no-pasan-por-la-api)) |
 | C-5 | 101 pruebas publicadas frente a 126 declaradas en local | Ver §2 |
 
 ## 9. Próxima decisión autorizada
@@ -80,7 +81,7 @@ Le corresponde al propietario:
 
 1. Qué hacer con el trabajo local de la fase 08 (publicarlo en su propia rama, revisarlo o descartarlo).
 2. Autorizar el inicio de la reparación económica.
-3. Resolver C-3 y la propuesta sobre la Skill ajena (ver [MAPA_TECNICO.md §9](MAPA_TECNICO.md#9-material-ajeno-al-proyecto)).
+3. Resolver la propuesta sobre la Skill ajena (ver [MAPA_TECNICO.md §9](MAPA_TECNICO.md#9-material-ajeno-al-proyecto)).
 
 ## 10. Qué no debe modificar el siguiente agente sin autorización
 
@@ -89,3 +90,15 @@ Le corresponde al propietario:
 - El trabajo local sin commit del propietario.
 - La evidencia histórica de `docs/evidencia/` y las fichas de `docs/fases/`.
 - `.agents/skills/necktral-phase-execution-zip/` (ver D1).
+
+## 11. GitHub como espejo de consulta (D7)
+
+GitHub es un espejo privado de lectura para auditorías de ChatGPT ([D7](DECISIONES.md#d7--github-solo-como-espejo-de-consulta)). El desarrollo sigue en local, y este documento describe solo lo publicado.
+
+**Antes de una nueva auditoría,** se prepara una instantánea verificable del código que el propietario autorice publicar, y se indican:
+
+1. el SHA publicado (`git rev-parse HEAD` igual a `git ls-remote origin <rama>`);
+2. el `VERSION_ESQUEMA` de ese SHA (`src/datos/base.js`);
+3. las pruebas ejecutadas sobre ese SHA en una copia aislada: comando, total, aprobadas y fecha.
+
+Lo que no se publica: trabajo sin autorizar (como el de la fase 08, con el esquema 6), bases reales, respaldos, fotos personales, APK y credenciales.

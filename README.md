@@ -4,20 +4,22 @@ Aplicación móvil de uso personal para registrar compras, comprobantes y el din
 
 **Estado:** versión `2.0.0-alfa.1`, en desarrollo. **V2 no está cerrada** y no está certificada para datos reales: las cinco gates de la matriz siguen pendientes, Android incluido.
 
+**GitHub** es un espejo privado de consulta ([D7](docs/DECISIONES.md#d7--github-solo-como-espejo-de-consulta)); el desarrollo sigue en local y puede ir por delante de lo publicado.
+
 ## Empezar aquí
 
 | Documento | Para qué |
 |---|---|
 | [`docs/ESTADO_ACTUAL.md`](docs/ESTADO_ACTUAL.md) | SHA publicado, pruebas con su fuente, gates, bloqueadores y diferencia con el trabajo local |
 | [`docs/MAPA_TECNICO.md`](docs/MAPA_TECNICO.md) | Dónde está cada componente, el flujo económico y qué prueba cubre cada invariante |
-| [`docs/DECISIONES.md`](docs/DECISIONES.md) | Decisiones del propietario (D1–D6) |
+| [`docs/DECISIONES.md`](docs/DECISIONES.md) | Decisiones del propietario (D1–D7) |
 | [`docs/MATRIZ_FINALIZACION_V2.md`](docs/MATRIZ_FINALIZACION_V2.md) | Referencia de aceptación de la V2 |
 | [`docs/CONTRATOS_API.md`](docs/CONTRATOS_API.md) | Contrato de la API local |
 | [`ERRORES_Y_GUARDAS.md`](ERRORES_Y_GUARDAS.md), [`AGENTS.md`](AGENTS.md), [`PLANTILLA_FASE.md`](PLANTILLA_FASE.md) | Reglas de trabajo de cada fase |
 
 ## Arquitectura
 
-- **La API local** (`src/api/`) es la única puerta a los datos: gestiones, compras, pagos, fondos, saldos, comprobantes, anexos, informes y respaldo. El contrato para quien diseña la interfaz está en [`docs/CONTRATOS_API.md`](docs/CONTRATOS_API.md).
+- **La API local** (`src/api/`) es la puerta a los datos financieros (la interfaz guarda los ajustes del informe directamente en el repositorio; ver el [mapa técnico](docs/MAPA_TECNICO.md#32-accesos-de-la-interfaz-que-no-pasan-por-la-api)): gestiones, compras, pagos, fondos, saldos, comprobantes, anexos, informes y respaldo. El contrato para quien diseña la interfaz está en [`docs/CONTRATOS_API.md`](docs/CONTRATOS_API.md).
 - **Las finanzas:** cuatro saldos que nunca se compensan (custodia, por reembolsar, por regularizar y deuda con proveedores), derivados siempre de los movimientos. La matriz A1–A9 está en `tests/aceptacion-financiera.test.js`.
 - **Los informes:** por gestión, varias gestiones, período, empresa o persona, y pendientes de comprobante. Ejecutivo o formal, Carta o A4. Cada emisión es una revisión inmutable con su huella; se regenera idéntica.
 - **Los anexos:** giro, enderezado, recorte y división de facturas largas en tramos, sin tocar la foto original; dos comprobantes chicos por página.

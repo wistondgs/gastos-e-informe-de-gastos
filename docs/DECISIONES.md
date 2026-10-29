@@ -45,3 +45,11 @@ Solo decisiones respaldadas por instrucciones del propietario. Las fases y su av
 - **Decisión:** no se modifica ninguna instalación con registros reales sin autorización.
 - **Consecuencias:** las pruebas usan la instalación aislada `io.necktral.gastos.entorno.pruebas` y datos sintéticos; las compilaciones, en copias aisladas (E-14).
 - **Restricción:** al repositorio no se suben bases reales, respaldos, fotos personales, APK ni claves.
+
+## D7 · GitHub solo como espejo de consulta
+
+- **Fecha:** 2026-10-29.
+- **Decisión:** `wistondgs/gastos-e-informe-de-gastos` es un espejo privado de lectura, para que ChatGPT analice el código, la arquitectura y la documentación. No es plataforma de despliegue, comercial ni de coordinación obligatoria.
+- **Motivo:** el desarrollo sigue en local con Claude Code y Codex.
+- **Consecuencias:** no se agregan CI/CD, automatizaciones ni procesos de GitHub que no sirvan a la consulta, ni PR por rutina. Para cada auditoría se publica una instantánea autorizada con SHA, esquema y pruebas ([ESTADO_ACTUAL.md §11](ESTADO_ACTUAL.md#11-github-como-espejo-de-consulta-d7)).
+- **Restricción:** solo se publica lo que el propietario autoriza. Nunca se publican automáticamente cambios locales (como los de la fase 08), datos personales, bases, respaldos, APK ni credenciales.
