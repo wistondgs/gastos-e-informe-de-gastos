@@ -1,5 +1,7 @@
 # Ficha de fase · Orden de ingeniería V2 (funcionalidad, datos, finanzas, documentos y respaldo)
 
+> **Nota del 2026-10-29:** ficha histórica. Su numeración de gates es histórica: la oficial es G1–G5 de [`MATRIZ_FINALIZACION_V2.md`](../MATRIZ_FINALIZACION_V2.md#gates-de-aceptación).
+
 ## 0. Errores y guardas aplicables
 
 - **Entradas revisadas:** E-01 a E-05 al empezar; E-06 a E-09 nacieron en esta fase.

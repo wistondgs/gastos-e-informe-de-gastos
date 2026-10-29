@@ -1,6 +1,6 @@
 # Matriz de avance · Finalización funcional V2
 
-Esta matriz registra el estado del árbol de trabajo y no declara cerrada la V2. La prueba de interfaz real y Android nativo sigue pendiente.
+Esta matriz registra el estado del árbol de trabajo y no declara cerrada la V2. La prueba de interfaz real y Android nativo sigue pendiente. Es la referencia de aceptación; el resumen con SHA y fuentes está en [`ESTADO_ACTUAL.md`](ESTADO_ACTUAL.md).
 
 | Capacidad                                                   | Código e interfaz                | Evidencia y límites                                                                                                                                                                                                                                                                                                    |
 | ----------------------------------------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

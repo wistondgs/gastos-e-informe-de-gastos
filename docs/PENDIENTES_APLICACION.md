@@ -2,6 +2,8 @@
 
 Anotaciones del propietario para revisar y desarrollar por fases. Registrar aquí un pendiente no significa que esté implementado ni aprobado un diseño definitivo.
 
+> **Nota del 2026-10-29:** los «Estado actual» de abajo son anteriores a la matriz. El estado vigente de cada capacidad está en [`MATRIZ_FINALIZACION_V2.md`](MATRIZ_FINALIZACION_V2.md); el reparto entre gestiones, el historial, los pagos posteriores y las anulaciones figuran allí como conectados (contradicción C-2 en [`ESTADO_ACTUAL.md`](ESTADO_ACTUAL.md#8-contradicciones-registradas)).
+
 ## Efectivo asignado a una gestión
 
 - Registrar quién entrega el efectivo, el importe y la moneda de una gestión.
