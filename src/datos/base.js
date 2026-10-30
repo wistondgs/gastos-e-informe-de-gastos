@@ -38,7 +38,20 @@ PRAGMA user_version = 4;`;
 const migration5 = `CREATE TABLE catalogos (id TEXT PRIMARY KEY, tipo TEXT NOT NULL CHECK(tipo IN ('cuenta','medio','categoria','destino')), nombre TEXT NOT NULL, activa INTEGER NOT NULL DEFAULT 1 CHECK(activa IN (0,1)), creada TEXT NOT NULL);
 CREATE TABLE catalogo_usos (id TEXT PRIMARY KEY, catalogo_id TEXT NOT NULL REFERENCES catalogos(id), compra_id TEXT NOT NULL REFERENCES compras(id), tipo TEXT NOT NULL CHECK(tipo IN ('cuenta','medio','categoria','destino')), nombre TEXT NOT NULL);
 PRAGMA user_version = 5;`;
-export const VERSION_ESQUEMA = 5;
+const migration6 = `ALTER TABLE recepciones ADD COLUMN finalidad TEXT NOT NULL DEFAULT '';
+ALTER TABLE recepciones ADD COLUMN beneficiario_id TEXT REFERENCES partes(id);
+PRAGMA user_version = 6;`;
+// Una aplicación sin gestión solo puede cancelar un reembolso sin gestión.
+const migration7 = `CREATE TABLE aplicaciones_v7 (id TEXT PRIMARY KEY, recepcion_id TEXT NOT NULL REFERENCES recepciones(id), gestion_id TEXT REFERENCES gestiones(id), destino TEXT NOT NULL CHECK(destino IN ('anticipo','reembolso')), importe INTEGER NOT NULL CHECK(importe > 0), anulada TEXT, CHECK(gestion_id IS NOT NULL OR destino = 'reembolso'));
+INSERT INTO aplicaciones_v7 SELECT id, recepcion_id, gestion_id, destino, importe, anulada FROM aplicaciones;
+DROP TABLE aplicaciones;
+ALTER TABLE aplicaciones_v7 RENAME TO aplicaciones;
+CREATE INDEX aplicaciones_recepcion ON aplicaciones(recepcion_id);
+PRAGMA user_version = 7;`;
+const migration8 = `CREATE TABLE atribuciones_regularizacion (id TEXT PRIMARY KEY, pago_id TEXT NOT NULL UNIQUE REFERENCES pagos(id), responsable_id TEXT NOT NULL REFERENCES partes(id), beneficiario_id TEXT NOT NULL REFERENCES partes(id), fecha TEXT NOT NULL, motivo TEXT NOT NULL);
+CREATE TABLE regularizaciones (id TEXT PRIMARY KEY, pago_id TEXT NOT NULL REFERENCES pagos(id), atribucion_id TEXT NOT NULL REFERENCES atribuciones_regularizacion(id), pagador_id TEXT NOT NULL REFERENCES partes(id), modalidad TEXT NOT NULL CHECK(modalidad IN ('reposicion','directa')), fecha TEXT NOT NULL, fecha_registro TEXT NOT NULL, importe INTEGER NOT NULL CHECK(importe > 0), motivo TEXT NOT NULL, anulada TEXT);
+PRAGMA user_version = 8;`;
+export const VERSION_ESQUEMA = 8;
 export const AJUSTES = {
   encabezado: "Informe de gastos",
   responsable: "",
@@ -66,6 +79,9 @@ export async function inicializar(db) {
   if (v < 3) await db.execute(migration3, true);
   if (v < 4) await db.execute(migration4, true);
   if (v < 5) await db.execute(migration5, true);
+  if (v < 6) await db.execute(migration6, true);
+  if (v < 7) await db.execute(migration7, true);
+  if (v < 8) await db.execute(migration8, true);
 }
 const insertar = (tabla, fila) => ({
   statement: insertarSql(tabla),

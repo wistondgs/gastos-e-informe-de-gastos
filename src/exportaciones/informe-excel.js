@@ -49,7 +49,8 @@ export async function informeExcel(modelo) {
     ["Responsable", seguro(o.responsable || "No indicado")],
     ["Destinatario", seguro(o.destinatario || "No indicado")],
     ["Corte", fechaCorta(o.corte)],
-    ["Emitido (UTC)", o.generado],
+    ["Emitido (hora local)", o.generado_local || o.generado],
+    ["Instante de emisión (UTC)", o.generado],
   ];
   for (const r of filas) resumen.addRow(r).getCell(1).font = { bold: true };
   for (const l of modelo.financiero?.liquidaciones || []) {
@@ -87,6 +88,10 @@ export async function informeExcel(modelo) {
     ["Importe en este informe", 20],
     ["Soporte", 24],
     ["Identificador interno", 38],
+    ["Pagado con fondos", 18],
+    ["Dinero propio", 18],
+    ["Crédito pendiente", 18],
+    ["Pago directo de tercero", 18],
   ]);
   for (const f of modelo.filas) {
     const c = f.compra;
@@ -98,13 +103,18 @@ export async function informeExcel(modelo) {
       seguro(c.factura || "Sin número"),
       seguro(c.concepto),
       c.moneda,
-      c.importe / 100,
+      modelo.tipo === "parte" ? null : c.importe / 100,
       f.importe / 100,
       f.soporte.texto,
       c.id,
+      f.pagosResumen ? f.pagosResumen.fondo / 100 : null,
+      f.pagosResumen ? f.pagosResumen.propio / 100 : null,
+      f.pagosResumen ? f.pagosResumen.credito / 100 : null,
+      f.pagosResumen ? f.pagosResumen.tercero / 100 : null,
     ]);
     r.getCell(5).numFmt = "@";
     r.getCell(8).numFmt = r.getCell(9).numFmt = "#,##0.00";
+    for (const n of [12, 13, 14, 15]) r.getCell(n).numFmt = "#,##0.00";
   }
   const asignadas = modelo.filas.filter((f) => f.asignaciones.length);
   if (asignadas.length) {
@@ -125,6 +135,69 @@ export async function informeExcel(modelo) {
           ])
           .getCell(4).numFmt = "#,##0.00";
   }
+  if (modelo.financiero?.recepciones?.length) {
+    const h = hoja(libro, "Recepciones", [
+      ["Fecha", 14],
+      ["Propietario", 30],
+      ["Moneda", 10],
+      ["Total global recibido", 22],
+      ["Sin aplicar global", 22],
+      ["Referencia", 25],
+    ]);
+    for (const r of modelo.financiero.recepciones) {
+      const fila = h.addRow([
+        fechaCorta(r.fecha),
+        seguro(r.parte),
+        r.moneda,
+        r.total / 100,
+        r.sin_aplicar / 100,
+        seguro(r.referencia),
+      ]);
+      fila.getCell(4).numFmt = "#,##0.00";
+      fila.getCell(5).numFmt = "#,##0.00";
+    }
+  }
+  if (modelo.financiero?.cuentas?.length) {
+    const h = hoja(libro, "Conciliación", [
+      ["Gestión", 26],
+      ["Persona o empresa", 28],
+      ["Moneda", 10],
+      ["Concepto", 28],
+      ["Importe", 16],
+    ]);
+    const campos = [
+      ["recibido", "Fondos aplicados"],
+      ["usado_fondo", "Pagado con fondos"],
+      ["aportado_propio", "Aporte propio"],
+      ["por_reembolsar", "Por reembolsar"],
+      ["reembolsado", "Reembolso recibido"],
+      ["devuelto", "Devuelto"],
+      ["traslado_entrada", "Traslado recibido"],
+      ["traslado_salida", "Traslado enviado"],
+      ["custodia", "En custodia"],
+      ["deuda_proveedor", "Deuda a proveedor"],
+      ["por_regularizar", "Por regularizar"],
+      ["regularizacion_original", "Obligación original por regularizar"],
+      ["regularizacion_repuesta", "Repuesto a custodia"],
+      ["regularizacion_directa", "Devuelto directamente"],
+    ];
+    for (const c of modelo.financiero.cuentas)
+      for (const [clave, etiqueta] of campos)
+        if (
+          c[clave] ||
+          (clave === "por_regularizar" && c.regularizacion_original) ||
+          (clave === "custodia" && (c.recibido || c.usado_fondo))
+        )
+          h
+            .addRow([
+              seguro(c.gestion || "Sin gestión"),
+              seguro(c.parte),
+              c.moneda,
+              etiqueta,
+              c[clave] / 100,
+            ])
+            .getCell(5).numFmt = "#,##0.00";
+  }
   if (modelo.financiero?.saldos.length) {
     const h = hoja(libro, "Fondos y saldos", [
       ["Concepto", 60],
@@ -141,6 +214,31 @@ export async function informeExcel(modelo) {
           s.importe / 100,
         ])
         .getCell(4).numFmt = "#,##0.00";
+  }
+  if (modelo.financiero?.movimientos?.length) {
+    const h = hoja(libro, "Movimientos", [
+      ["Fecha", 16],
+      ["Operación vigente", 28],
+      ["Gestión", 25],
+      ["Persona o empresa", 27],
+      ["Moneda", 10],
+      ["Importe", 16],
+      ["Referencia", 22],
+      ["Detalle", 35],
+    ]);
+    for (const m of modelo.financiero.movimientos)
+      h
+        .addRow([
+          m.fecha || "No registrada",
+          seguro(m.tipo),
+          seguro(m.gestion),
+          seguro(m.parte),
+          m.moneda,
+          m.importe / 100,
+          seguro(m.referencia),
+          seguro(m.detalle),
+        ])
+        .getCell(6).numFmt = "#,##0.00";
   }
   const conFotos = modelo.filas.filter(
     (f) => f.cantidadFotos || f.soporte.estado !== "presente",

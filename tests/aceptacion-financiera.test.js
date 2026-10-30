@@ -90,7 +90,7 @@ test("A2 anticipo: recibir C$100,000, pagar C$96,000 y devolver C$4,000 deja la 
   );
   let r = await api.saldos.consultar({ gestion_id: "g1" });
   assert.equal(saldo(r.saldos, "custodia", "agricola"), 400000);
-  assert.equal(saldo(r.saldos, "por_reembolsar", "winston"), 0);
+  assert.equal(saldo(r.saldos, "por_reembolsar", "juan"), 0);
   await api.fondos.devolver({
     gestion_id: "g1",
     parte_id: "agricola",
@@ -225,7 +225,7 @@ test("A5 períodos: una sola entrada de C$7,000 liquida C$5,000 de una gestión 
   await api.gestiones.crear({
     id: "g2",
     nombre: "Segunda gestión",
-    responsable_id: "winston",
+    responsable_id: "juan",
     fecha_inicio: "2026-10-23",
   });
   await api.compras.registrar(
@@ -320,7 +320,7 @@ test("A6 compra mixta: C$600 + C$250 + C$150 personal; C$1,001 se rechaza; el in
   const { bytes } = await api.informes.abrir(informe.id);
   const texto = textoDePaginas(await PDFDocument.load(bytes)).flat();
   assert.ok(texto.includes("C$ 600.00"), "solo lo asignado");
-  assert.ok(texto.includes("de C$ 1,000.00"));
+  assert.ok(!texto.includes("de C$ 1,000.00"));
   assert.ok(
     !texto.some((t) => t.includes("Solo de la otra")),
     "sin filas de B",

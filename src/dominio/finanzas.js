@@ -65,7 +65,7 @@ function validarRegistro(r, campos) {
 }
 
 /** Índices de los datos vigentes al corte. */
-function indexar(d, corte) {
+export function indexar(d, corte) {
   const por = (lista, f = () => true) =>
     new Map((lista || []).filter(f).map((x) => [x.id, x]));
   const compras = por(
@@ -147,6 +147,25 @@ function imputacion(pago, ix) {
  */
 export function calcularSaldos(datos, { corte = null } = {}) {
   const ix = indexar(datos, corte);
+  const pagosOriginales = new Map((datos.pagos || []).map((p) => [p.id, p]));
+  const atribuidos = new Set();
+  for (const a of datos.atribuciones_regularizacion || []) {
+    const p = pagosOriginales.get(a.pago_id);
+    if (
+      !ID.test(a.id || "") ||
+      !p ||
+      p.origen !== "fondo" ||
+      !ix.partes.has(a.responsable_id) ||
+      !ix.partes.has(a.beneficiario_id) ||
+      !fechaValida(a.fecha) ||
+      a.fecha < p.fecha ||
+      typeof a.motivo !== "string" ||
+      !a.motivo.trim() ||
+      atribuidos.has(a.pago_id)
+    )
+      falla("Atribución de regularización inválida.");
+    atribuidos.add(a.pago_id);
+  }
   const saldos = new Map(),
     observaciones = [];
   const sumar = (tipo, gestion_id, parte_id, moneda, importe, extra = {}) => {
@@ -251,11 +270,54 @@ export function calcularSaldos(datos, { corte = null } = {}) {
         falla("Indicá quién pagó directamente.", "parte_id");
     } else falla("Origen de pago inválido.", "origen");
   }
+  const porPago = new Map();
+  for (const r of datos.regularizaciones || []) {
+    if (!vigente(r, corte) || !dentro(r.fecha, corte)) continue;
+    const p = ix.pagos.find((x) => x.id === r.pago_id);
+    const a = (datos.atribuciones_regularizacion || []).find(
+      (x) => x.id === r.atribucion_id && x.pago_id === r.pago_id,
+    );
+    if (
+      !p ||
+      p.origen !== "fondo" ||
+      !a ||
+      !ix.partes.has(a.responsable_id) ||
+      !ix.partes.has(a.beneficiario_id) ||
+      !ix.partes.has(r.pagador_id) ||
+      !["reposicion", "directa"].includes(r.modalidad) ||
+      !entero(r.importe) ||
+      !fechaValida(r.fecha) ||
+      !fechaValida(a.fecha) ||
+      a.fecha < p.fecha ||
+      r.fecha < a.fecha ||
+      !ID.test(r.id || "") ||
+      !ID.test(a.id || "") ||
+      typeof r.motivo !== "string" ||
+      typeof a.motivo !== "string" ||
+      !r.motivo?.trim() ||
+      !a.motivo?.trim()
+    )
+      falla("Regularización o atribución inválida.");
+    const c = ix.compras.get(p.compra_id);
+    const cargo = imputacion(p, ix);
+    if (!c || !cargo || cargo.parte_id !== null)
+      falla("El pago no origina una obligación personal.");
+    const total = (porPago.get(p.id) || 0) + r.importe;
+    if (!Number.isSafeInteger(total) || total > p.importe)
+      falla("La regularización excede la obligación.", "importe");
+    porPago.set(p.id, total);
+    sumar("por_regularizar", c.gestion_id, p.parte_id, c.moneda, -r.importe);
+    if (r.modalidad === "reposicion")
+      sumar("custodia", c.gestion_id, p.parte_id, c.moneda, r.importe);
+  }
   // Recepciones y sus aplicaciones.
   const aplicado = new Map();
   for (const ap of ix.aplicaciones) {
     const r = ix.recepciones.get(ap.recepcion_id);
-    if (!ix.gestiones.has(ap.gestion_id))
+    if (
+      (ap.gestion_id == null && ap.destino !== "reembolso") ||
+      (ap.gestion_id != null && !ix.gestiones.has(ap.gestion_id))
+    )
       falla("Aplicación a una gestión inexistente.", "gestion_id");
     aplicado.set(r.id, (aplicado.get(r.id) || 0) + ap.importe);
     if (aplicado.get(r.id) > r.importe)
@@ -330,7 +392,8 @@ export function liquidacion(datos, gestionId, opciones = {}) {
     ix.movimientos.some(
       (m) => m.gestion_id === gestionId || m.gestion_destino_id === gestionId,
     );
-  if (!hubo) return { estado: "sin_movimientos", saldos: [] };
+  if (!hubo && !propios.length)
+    return { estado: "sin_movimientos", saldos: [] };
   if (!propios.length) return { estado: "liquidada", saldos: [] };
   const cancelaciones =
     ix.aplicaciones.some(

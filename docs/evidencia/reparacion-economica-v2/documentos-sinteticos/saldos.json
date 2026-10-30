@@ -1,0 +1,50 @@
+{
+  "saldos": [
+    {
+      "tipo": "por_reembolsar",
+      "gestion_id": null,
+      "parte_id": "otra",
+      "moneda": "USD",
+      "importe": 1500
+    },
+    {
+      "tipo": "custodia",
+      "gestion_id": "g1",
+      "parte_id": "agricola",
+      "moneda": "NIO",
+      "importe": 2000
+    },
+    {
+      "tipo": "custodia",
+      "gestion_id": "g1",
+      "parte_id": "empresa-sin-compras",
+      "moneda": "NIO",
+      "importe": 20000
+    },
+    {
+      "tipo": "deuda_proveedor",
+      "gestion_id": "g1",
+      "parte_id": "agricola",
+      "moneda": "NIO",
+      "importe": 600000,
+      "compra_id": "credito",
+      "proveedor": "Proveedor de prueba"
+    },
+    {
+      "tipo": "por_reembolsar",
+      "gestion_id": "g1",
+      "parte_id": "agricola",
+      "moneda": "NIO",
+      "importe": 3000
+    }
+  ],
+  "observaciones": [
+    {
+      "tipo": "recepcion_sin_aplicar",
+      "recepcion_id": "deposito-sin-compras",
+      "parte_id": "empresa-sin-compras",
+      "moneda": "NIO",
+      "importe": 5000
+    }
+  ]
+}

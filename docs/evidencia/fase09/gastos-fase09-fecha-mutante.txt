@@ -1,0 +1,31 @@
+✖ la compra guiada conserva la fecha elegida en la entrada de la API (7.884038ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 407.642585
+
+✖ failing tests:
+
+test at ../../../../tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:58:1
+✖ la compra guiada conserva la fecha elegida en la entrada de la API (7.884038ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + '2026-10-29'
+  - '2026-10-21'
+              ^
+  
+      at TestContext.<anonymous> (file:///tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:61:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '2026-10-29',
+    expected: '2026-10-21',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

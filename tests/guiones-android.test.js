@@ -58,3 +58,34 @@ test("con Descargas sin APK y el tamaño indexado, entrega", () => {
   assert.equal(r.codigo, 0, r.salida);
   assert.match(r.salida, /indexado/);
 });
+
+test("la procedencia indica si hay cambios locales, incluidos archivos nuevos", () => {
+  const dir = mkdtempSync(join(tmpdir(), "procedencia-"));
+  try {
+    const run = (...args) =>
+      spawnSync("git", args, { cwd: dir, encoding: "utf8" });
+    assert.equal(run("init", "-q").status, 0);
+    writeFileSync(join(dir, "archivo"), "base");
+    assert.equal(run("add", "archivo").status, 0);
+    assert.equal(
+      run(
+        "-c",
+        "user.name=Prueba",
+        "-c",
+        "user.email=prueba@example.invalid",
+        "commit",
+        "-qm",
+        "base",
+      ).status,
+      0,
+    );
+    const script = join(process.cwd(), "scripts/android/identidad-fuente.sh");
+    const identidad = () =>
+      spawnSync("bash", [script], { cwd: dir, encoding: "utf8" }).stdout.trim();
+    assert.match(identidad(), /^[a-f0-9]{40} limpio$/);
+    writeFileSync(join(dir, "nuevo"), "cambio");
+    assert.match(identidad(), /^[a-f0-9]{40} modificado$/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -82,3 +82,25 @@ test("reparto mixto con varias partes mantiene cada pago y su asignación", asyn
   assert.equal(saldo(saldos, "por_reembolsar", "agricola"), 60000);
   assert.equal(saldo(saldos, "por_reembolsar", "otra"), 25000);
 });
+
+test("pago directo identifica por separado pagador y beneficiario", async () => {
+  const { api } = await entorno();
+  await basico(api);
+  const entrada = prepararCompraFinanciera(compra({ id: "tercero" }), {
+    tipo: "tercero",
+    parte_id: "agricola",
+    pagador_id: "otra",
+  });
+  await api.compras.registrar(entrada);
+  const d = await api.compras.detalle("tercero");
+  assert.equal(d.asignaciones[0].parte_id, "agricola");
+  assert.equal(d.pagos[0].parte_id, "otra");
+  assert.equal(d.pagos[0].origen, "tercero");
+});
+
+test("una compra sin elección de pago pide seleccionar el origen", () => {
+  assert.throws(
+    () => prepararCompraFinanciera(compra(), { tipo: "", parte_id: "" }),
+    /elegí cómo pagaste/i,
+  );
+});

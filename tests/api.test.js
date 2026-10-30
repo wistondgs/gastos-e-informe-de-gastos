@@ -375,14 +375,9 @@ test("informes de varias gestiones, de un período, de pendientes y por destinat
       !t1.some((t) => t.includes("Tres")),
   );
   assert.ok(t1.some((t) => t.includes("Gestión: Segunda")));
-  assert.ok(t1.some((t) => t.includes("ESTADO FINANCIERO AL CORTE")));
-  assert.ok(
-    t1.some((t) =>
-      t.includes(
-        "Por reembolsar al responsable, a cargo de Agrícola de prueba",
-      ),
-    ),
-  );
+  assert.ok(t1.some((t) => t.includes("CONCILIACIÓN ECONÓMICA AL CORTE")));
+  assert.ok(t1.some((t) => t.includes("Agrícola de prueba")));
+  assert.ok(t1.includes("Por reembolsar"));
   assert.ok(varias.informe.codigo.startsWith("GM-"));
   const periodo = await api.informes.emitir({
     alcance: { tipo: "periodo", desde: "2026-10-23", hasta: "2026-10-24" },
@@ -456,7 +451,15 @@ test("informes de varias gestiones, de un período, de pendientes y por destinat
   await libro.xlsx.load(bytes);
   assert.deepEqual(
     libro.worksheets.map((h) => h.name),
-    ["Resumen", "Compras", "Asignaciones", "Fondos y saldos", "Comprobantes"],
+    [
+      "Resumen",
+      "Compras",
+      "Asignaciones",
+      "Conciliación",
+      "Fondos y saldos",
+      "Movimientos",
+      "Comprobantes",
+    ],
   );
   const exportado = await api.informes.exportar(varias.informe.id);
   assert.equal(exportado.nuevo, false, "ya estaba exportado al emitir");
@@ -476,7 +479,7 @@ test("la API solo entrega ErrorApi, objetos serializables y la identidad del pro
   const detalle = await api.gestiones.detalle("g1");
   assert.deepEqual(JSON.parse(JSON.stringify(detalle)), detalle);
   const id = await api.identidad();
-  assert.equal(id.firma, "Desarrollado por W Gutiérrez");
+  assert.equal(id.firma, "Desarrollado por W. Gutiérrez");
   assert.equal(id.producto, "Gastos e Informe de Gastos");
   const { bytes } = await api.informes.emitir({
     alcance: { tipo: "gestion", gestion_id: "g1" },

@@ -1,0 +1,36 @@
+✖ historial del mismo día sigue el orden registrado y no el orden de identificadores (110.926416ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 587.720573
+
+✖ failing tests:
+
+test at tests/caja-guiada.test.js:97:1
+✖ historial del mismo día sigue el orden registrado y no el orden de identificadores (110.926416ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+  +   'pago',
+      'anticipo',
+  +   'compra',
+      'anticipo',
+  -   'compra',
+  -   'pago'
+    ]
+  
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/caja-guiada.test.js:104:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'pago', 'anticipo', 'compra', 'anticipo' ],
+    expected: [ 'anticipo', 'anticipo', 'compra', 'pago' ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

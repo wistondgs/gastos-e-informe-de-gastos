@@ -24,7 +24,7 @@ Aplicación móvil de uso personal para registrar compras, comprobantes y el din
 - **Los informes:** por gestión, varias gestiones, período, empresa o persona, y pendientes de comprobante. Ejecutivo o formal, Carta o A4. Cada emisión es una revisión inmutable con su huella; se regenera idéntica.
 - **Los anexos:** giro, enderezado, recorte y división de facturas largas en tramos, sin tocar la foto original; dos comprobantes chicos por página.
 - **El respaldo v4:** la base completa, las fotos y las copias privadas de los informes, con manifiesto de huellas. **No está cifrado.** Restaura también los respaldos v1 a v3.
-- **El esquema SQLite 5** (`VERSION_ESQUEMA` en `src/datos/base.js`) migra desde las bases anteriores sin perder compras, fotos ni identificadores. La migración a 4 está en `docs/fases/03-orden-ingenieria-v2.md`; la 4→5 agrega los catálogos.
+- **El esquema SQLite 8** (`VERSION_ESQUEMA` en `src/datos/base.js`) agrega atribuciones explícitas y liquidaciones vinculadas al pago que originó la regularización. El 7 permite aplicar reembolsos a compras sin gestión; los anticipos siguen requiriendo gestión. Las versiones anteriores no pueden abrir bases migradas al esquema 8. La migración a 4 está en `docs/fases/03-orden-ingenieria-v2.md`.
 
 ## Dónde está todo
 
@@ -80,3 +80,5 @@ iOS: `npm run ios:sync` prepara los recursos; compilar y probar requiere macOS y
 El ZIP lleva todas las tablas, las fotos originales y las copias privadas de los informes, con huellas SHA-256. Restaurar valida todo antes de reemplazar (también las reglas de dinero) y prepara los archivos aparte; si algo falla, el estado anterior queda intacto. **No está cifrado ni tiene contraseña:** guardarlo en un destino privado. La base en el teléfono está en el almacenamiento privado de la app, protegido por el cifrado del propio Android; la conexión SQLite es `no-encryption` y no se declara cifrada.
 
 Errores y guardas del proyecto: `ERRORES_Y_GUARDAS.md`.
+
+Las compilaciones actuales desactivan el respaldo automático de Android y excluyen los datos privados de las reglas de transferencia configuradas. El respaldo manual de la app sigue disponible y no está cifrado; su restauración nativa requiere validación en un dispositivo aislado. La firma de depuración sirve para pruebas, no resuelve todavía la firma estable de uso personal.

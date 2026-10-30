@@ -1,0 +1,11 @@
+[plugin vite:resolve] Module "fs" has been externalized for browser compatibility, imported by "/tmp/gastos-fase08-cierre-29/node_modules/sql.js/dist/sql-wasm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "path" has been externalized for browser compatibility, imported by "/tmp/gastos-fase08-cierre-29/node_modules/sql.js/dist/sql-wasm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/tmp/gastos-fase08-cierre-29/node_modules/sql.js/dist/sql-wasm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+Warning: SDK processing. This version only understands SDK XML versions up to 3 but an SDK XML file of version 4 was encountered. This can happen if you use versions of Android Studio and the command-line tools that were released at different times.
+/home/wis/dev/gastos-e-informe-de-gastos/apk/io.necktral.gastos.entorno.pruebas-v2.0.0-alfa.1-c2-63b26a4-modificado-27f30255.apk
+paquete=io.necktral.gastos.entorno.pruebas version=2.0.0-alfa.1 codigo=2 sha256=27f30255d1a9b39e9c0354ec00b304acd942913c4139baad130b4a5eebd9d6d0 fuente_sha=63b26a4d15246073348e8c69f6f2ff9bfa72dec3 fuente_estado=modificado

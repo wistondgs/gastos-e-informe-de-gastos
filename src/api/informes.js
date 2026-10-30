@@ -1,11 +1,14 @@
-import { huella } from "../datos/archivos.js";
+import { huella, base64ABytes } from "../datos/archivos.js";
+import { verificarImagen } from "../dominio/operaciones.js";
 import {
   calcularSaldos,
+  indexar,
   liquidacion,
   vigente,
   compraVigente,
 } from "../dominio/finanzas.js";
 import { fechaValida } from "../dominio/gestion.js";
+import { estadoCuentas } from "../dominio/estado-cuentas.js";
 import {
   claveAlcance,
   codigoInforme,
@@ -217,12 +220,23 @@ async function contexto(
         conCargo.has(c.id) &&
         (!alcance.gestion_ids?.length ||
           alcance.gestion_ids.includes(c.gestion_id));
+      const ixParte = indexar(datos, corte);
       gestionesAlcance = [
         ...new Set(
-          vigentes
-            .filter(deAlcance)
-            .map((c) => c.gestion_id)
-            .filter(Boolean),
+          [
+            ...vigentes.filter(deAlcance).map((c) => c.gestion_id),
+            ...ixParte.aplicaciones
+              .filter(
+                (a) =>
+                  ixParte.recepciones.get(a.recepcion_id)?.parte_id === p.id,
+              )
+              .map((a) => a.gestion_id),
+          ].filter(
+            (id) =>
+              id &&
+              (!alcance.gestion_ids?.length ||
+                alcance.gestion_ids.includes(id)),
+          ),
         ),
       ];
       break;
@@ -280,6 +294,8 @@ async function contexto(
     elegibles = elegibles.filter((c) => ids.has(c.id));
   }
   const items = [];
+  const ixDetalle = indexar(datos, corte);
+  const { saldos, observaciones } = calcularSaldos(datos, { corte });
   for (const compra of elegibles) {
     const fotos = datos.fotos
       .filter((f) => f.compra_id === compra.id)
@@ -292,6 +308,25 @@ async function contexto(
       fotos,
       gestion: gestiones.get(compra.gestion_id)?.nombre || null,
     };
+    if (["gestion", "gestiones"].includes(alcance.tipo)) {
+      const pagos = ixDetalle.pagos.filter((p) => p.compra_id === compra.id);
+      item.pagosResumen = {
+        fondo: pagos
+          .filter((p) => p.origen === "fondo")
+          .reduce((n, p) => n + p.importe, 0),
+        propio: pagos
+          .filter((p) => p.origen === "propio")
+          .reduce((n, p) => n + p.importe, 0),
+        tercero: pagos
+          .filter((p) => p.origen === "tercero")
+          .reduce((n, p) => n + p.importe, 0),
+        credito: saldos
+          .filter(
+            (s) => s.tipo === "deuda_proveedor" && s.compra_id === compra.id,
+          )
+          .reduce((n, s) => n + s.importe, 0),
+      };
+    }
     if (alcance.tipo === "parte") {
       const propias = asig.filter((a) => a.parte_id === alcance.parte_id);
       item.asignado = propias.reduce((t, a) => t + a.importe, 0);
@@ -324,9 +359,11 @@ async function contexto(
     items.push(item);
   }
   // Estado financiero al corte: solo de las gestiones del alcance (y, por destinatario, solo sus saldos).
-  const { saldos, observaciones } = calcularSaldos(datos, { corte });
   const propios = (s) =>
-    gestionesAlcance.includes(s.gestion_id) &&
+    (gestionesAlcance.includes(s.gestion_id) ||
+      (alcance.tipo === "parte" &&
+        s.gestion_id === null &&
+        !alcance.gestion_ids?.length)) &&
     (alcance.tipo !== "parte" || s.parte_id === alcance.parte_id);
   const liquidaciones = ["gestion", "gestiones"].includes(alcance.tipo)
     ? gestionesAlcance.map((id) => ({
@@ -345,7 +382,173 @@ async function contexto(
   const hubo =
     liquidaciones.some((l) => l.estado !== "sin_movimientos") ||
     lineasSaldo.length > 0;
+  const parcial =
+    Array.isArray(elegidas) &&
+    elegibles.length < vigentes.filter(deAlcance).length;
+  const completoGestion =
+    !parcial && ["gestion", "gestiones"].includes(alcance.tipo);
+  const movimientosInforme = [];
+  const recepcionesInforme = [];
+  if (alcance.tipo === "parte" && !parcial) {
+    const ix = indexar(datos, corte);
+    for (const r of ix.recepciones.values()) {
+      if (r.parte_id !== alcance.parte_id) continue;
+      const aplicaciones = ix.aplicaciones.filter(
+        (a) => a.recepcion_id === r.id,
+      );
+      if (
+        alcance.gestion_ids?.length &&
+        !aplicaciones.some((a) => alcance.gestion_ids.includes(a.gestion_id))
+      )
+        continue;
+      recepcionesInforme.push({
+        id: r.id,
+        fecha: r.fecha,
+        parte: nombreParte(r.parte_id),
+        moneda: r.moneda,
+        total: r.importe,
+        sin_aplicar:
+          r.importe - aplicaciones.reduce((n, a) => n + a.importe, 0),
+        referencia: r.referencia || "",
+      });
+    }
+  }
+  if (completoGestion) {
+    const ix = indexar(datos, corte);
+    const vistosRecepcion = new Set();
+    for (const a of ix.aplicaciones) {
+      if (!gestionesAlcance.includes(a.gestion_id)) continue;
+      const r = ix.recepciones.get(a.recepcion_id);
+      if (!r) continue;
+      const eventoAplicacion = datos.eventos.find(
+        (e) =>
+          e.entidad === "aplicacion" &&
+          e.entidad_id === a.id &&
+          e.tipo === "aplicar",
+      );
+      movimientosInforme.push({
+        fecha: eventoAplicacion?.fecha?.slice(0, 10) || null,
+        tipo: a.destino === "anticipo" ? "Aplicación" : "Reembolso",
+        gestion: gestiones.get(a.gestion_id)?.nombre || "",
+        parte: nombreParte(r.parte_id),
+        moneda: r.moneda,
+        importe: a.importe,
+        referencia: r.referencia || "",
+        detalle: eventoAplicacion ? "" : "Fecha de aplicación no registrada",
+      });
+      if (vistosRecepcion.has(r.id)) continue;
+      vistosRecepcion.add(r.id);
+      const aplicadoTotal = ix.aplicaciones
+        .filter((x) => x.recepcion_id === r.id)
+        .reduce((n, x) => n + x.importe, 0);
+      recepcionesInforme.push({
+        id: r.id,
+        fecha: r.fecha,
+        parte: nombreParte(r.parte_id),
+        moneda: r.moneda,
+        total: r.importe,
+        sin_aplicar: r.importe - aplicadoTotal,
+        referencia: r.referencia || "",
+      });
+      if (r.finalidad || r.beneficiario_id)
+        lineas.push([
+          "Encargo de " + nombreParte(r.parte_id),
+          `Beneficiario: ${r.beneficiario_id ? nombreParte(r.beneficiario_id) : "No indicado"}; finalidad: ${r.finalidad || "No indicada"}`,
+        ]);
+    }
+    for (const pago of ix.pagos) {
+      const compra = ix.compras.get(pago.compra_id);
+      if (!compra || !gestionesAlcance.includes(compra.gestion_id)) continue;
+      movimientosInforme.push({
+        fecha: pago.fecha,
+        tipo:
+          pago.origen === "fondo"
+            ? "Pago con fondo"
+            : pago.origen === "propio"
+              ? "Pago propio"
+              : "Pago directo de tercero",
+        gestion: gestiones.get(compra.gestion_id)?.nombre || "",
+        parte: pago.parte_id ? nombreParte(pago.parte_id) : "Responsable",
+        moneda: compra.moneda,
+        importe: pago.importe,
+        referencia: compra.factura || "",
+        detalle: compra.concepto,
+      });
+    }
+    for (const r of datos.regularizaciones || []) {
+      if (!vigente(r, corte) || r.fecha > corte) continue;
+      const pago = ix.pagos.find((p) => p.id === r.pago_id);
+      const compra = pago && ix.compras.get(pago.compra_id);
+      if (!compra || !gestionesAlcance.includes(compra.gestion_id)) continue;
+      movimientosInforme.push({
+        fecha: r.fecha,
+        tipo:
+          r.modalidad === "reposicion"
+            ? "Reposición a custodia"
+            : "Devolución directa",
+        gestion: gestiones.get(compra.gestion_id)?.nombre || "",
+        parte: nombreParte(pago.parte_id),
+        moneda: compra.moneda,
+        importe: r.importe,
+        referencia: r.id,
+        detalle: `Reintegro por ${nombreParte(r.pagador_id)}; pago ${pago.id}`,
+      });
+    }
+    for (const m of ix.movimientos) {
+      if (
+        !gestionesAlcance.includes(m.gestion_id) &&
+        !gestionesAlcance.includes(m.gestion_destino_id)
+      )
+        continue;
+      movimientosInforme.push({
+        fecha: m.fecha,
+        tipo: m.tipo === "devolucion" ? "Devolución" : "Traslado",
+        gestion: gestiones.get(m.gestion_id)?.nombre || "",
+        parte: nombreParte(m.parte_id),
+        moneda: m.moneda,
+        importe: m.importe,
+        referencia: m.id,
+        detalle:
+          m.tipo === "traslado"
+            ? `Destino: ${gestiones.get(m.gestion_destino_id)?.nombre || "No disponible"}`
+            : "",
+      });
+    }
+    movimientosInforme.sort(
+      (a, b) =>
+        (a.fecha || "").localeCompare(b.fecha || "") ||
+        a.tipo.localeCompare(b.tipo),
+    );
+    for (const id of gestionesAlcance) {
+      const g = gestiones.get(id);
+      if (g?.responsable_id)
+        lineas.push([
+          "Responsable de " + g.nombre,
+          nombreParte(g.responsable_id),
+        ]);
+    }
+  }
+  const cuentas = completoGestion
+    ? estadoCuentas(datos, null, { corte })
+        .filter((c) => gestionesAlcance.includes(c.gestion_id))
+        .map((c) => ({
+          ...c,
+          gestion: gestiones.get(c.gestion_id)?.nombre || null,
+          parte: nombreParte(c.parte_id),
+        }))
+    : [];
+  recepcionesInforme.sort(
+    (a, b) => a.fecha.localeCompare(b.fecha) || a.id.localeCompare(b.id),
+  );
   const textos = [];
+  if (parcial)
+    textos.push(
+      "Selección parcial: los saldos generales de la gestión no se atribuyen a estas compras.",
+    );
+  if (["periodo", "pendientes"].includes(alcance.tipo))
+    textos.push(
+      "El detalle es parcial; no se presentan saldos generales de gestión como si pertenecieran a estas compras.",
+    );
   const enAlcance = new Set(items.map((i) => i.compra.id));
   for (const ob of observaciones) {
     if (
@@ -378,7 +581,20 @@ async function contexto(
     alcance,
     descripcion: { titulo: TIPOS_INFORME[alcance.tipo].nombre, lineas },
     items,
-    financiero: hubo ? { saldos: lineasSaldo, liquidaciones } : null,
+    financieroLimitado:
+      parcial || ["periodo", "pendientes"].includes(alcance.tipo),
+    financiero:
+      !parcial &&
+      !["periodo", "pendientes"].includes(alcance.tipo) &&
+      (hubo || cuentas.length || recepcionesInforme.length)
+        ? {
+            saldos: lineasSaldo,
+            liquidaciones,
+            cuentas,
+            movimientos: movimientosInforme,
+            recepciones: recepcionesInforme,
+          }
+        : null,
     observaciones: textos,
   };
 }
@@ -401,19 +617,53 @@ export function servicioInformes({
     };
     if (!fechaValida(o.corte))
       throw validacion("Fecha de corte inválida.", "corte");
+    if (o.logotipo) {
+      const coincidencia =
+        /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/]+={0,2})$/.exec(
+          o.logotipo,
+        );
+      if (!coincidencia || o.logotipo.length > 1400000)
+        throw validacion(
+          "Elegí un logotipo PNG o JPEG de hasta 1 MB.",
+          "logotipo",
+        );
+      verificarImagen(base64ABytes(coincidencia[2]), coincidencia[1]);
+    }
+    if (o.destinatario_id) {
+      const persona = await repo.una("partes", o.destinatario_id);
+      if (!persona)
+        throw validacion(
+          "El destinatario seleccionado no existe.",
+          "destinatario_id",
+        );
+      o.destinatario = persona.nombre;
+    }
     const ctx = await contexto(repo, files, alcance, o);
+    if (!o.responsable.trim() && alcance.tipo === "gestion") {
+      const indice = ctx.descripcion.lineas.findIndex(([etiqueta]) =>
+        etiqueta.startsWith("Responsable de "),
+      );
+      if (indice >= 0)
+        o.responsable = ctx.descripcion.lineas.splice(indice, 1)[0][1];
+    }
     const generado = reloj().toISOString();
     const modelo = prepararInforme(ctx, {
       titulo: o.titulo,
       responsable: o.responsable,
       destinatario: o.destinatario,
+      destinatario_id: o.destinatario_id || null,
       corte: o.corte,
       papel: o.papel,
       estilo: o.estilo,
       incluirFotos: !!o.incluirFotos,
       incluirCompartidos: !!o.incluirCompartidos,
+      logotipo: o.logotipo || null,
       revision,
       generado,
+      generado_local: new Intl.DateTimeFormat("es-NI", {
+        dateStyle: "medium",
+        timeStyle: "short",
+      }).format(new Date(generado)),
       codigo: codigoInforme(alcance, revision),
     });
     return { modelo, bytes: await informePdf(modelo, files) };
@@ -469,6 +719,8 @@ export function servicioInformes({
         totales: modelo.totales,
         filas: modelo.filas.length,
         anexos: modelo.anexos.length,
+        financiero: modelo.financiero,
+        financieroLimitado: modelo.financieroLimitado,
         bytes,
       };
     },
@@ -589,12 +841,21 @@ export function servicioInformes({
     /** El Excel de la misma revisión, desde su modelo guardado. */
     async excel(id) {
       const r = await registro(id);
-      if (r.motor !== MOTOR_PDF)
+      if (![3, 4, 5, 6, 7, 8, 9, MOTOR_PDF].includes(r.motor))
         throw estado(
           "La revisión se emitió con otra versión: no tiene modelo para Excel.",
         );
+      const modelo = JSON.parse(r.datos);
+      if (
+        r.motor < 9 &&
+        modelo.tipo === "parte" &&
+        modelo.filas.some((f) => f.compartida)
+      )
+        throw estado(
+          "Esta revisión anterior puede revelar importes de otras partes. Emití una nueva revisión para exportar Excel con privacidad.",
+        );
       return {
-        bytes: await informeExcel(JSON.parse(r.datos)),
+        bytes: await informeExcel(modelo),
         nombre: `${r.codigo}.xlsx`,
       };
     },

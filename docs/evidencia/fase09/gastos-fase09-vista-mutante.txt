@@ -1,0 +1,18 @@
+✖ vista previa entrega los mismos saldos del informe sin emitir revisión (147.181547ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 558.992281
+
+✖ failing tests:
+
+test at ../../../../tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:82:1
+✖ vista previa entrega los mismos saldos del informe sin emitir revisión (147.181547ms)
+  TypeError: Cannot read properties of undefined (reading 'cuentas')
+      at TestContext.<anonymous> (file:///tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:112:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)

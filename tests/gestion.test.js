@@ -20,7 +20,7 @@ const files = {
 };
 const gestion = {
   id: "gestion-1",
-  nombre: "Winston Managua",
+  nombre: "Juan Managua",
   fecha_inicio: "2026-10-27",
   fecha_fin: null,
 };
@@ -59,7 +59,7 @@ test("migración conserva compras antiguas y gestión permite cierre y respaldo"
   await inicializar(db2);
   const repo2 = repositorio(db2);
   await restaurarRespaldo(repo2, files, backup);
-  assert.equal((await repo2.gestiones())[0].nombre, "Winston Managua");
+  assert.equal((await repo2.gestiones())[0].nombre, "Juan Managua");
   assert.equal(
     (await repo2.compras()).find((x) => x.id === "nueva").gestion_id,
     "gestion-1",

@@ -1,0 +1,18 @@
+✖ el mensaje de un anticipo no lo presenta como saldo total (4.883556ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 482.758851
+
+✖ failing tests:
+
+test at tests/interfaz-guiada.test.js:684:1
+✖ el mensaje de un anticipo no lo presenta como saldo total (4.883556ms)
+  TypeError: textoAnticipoRecibido is not a function
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/interfaz-guiada.test.js:687:17)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)

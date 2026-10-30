@@ -10,7 +10,7 @@ import {
   concatTransformationMatrix,
   drawObject,
 } from "pdf-lib";
-import { huella } from "../datos/archivos.js";
+import { huella, base64ABytes } from "../datos/archivos.js";
 import { dinero } from "../dominio/compra.js";
 import { PAPELES, TIPOS_INFORME, anexoTexto } from "../dominio/informe.js";
 import {
@@ -21,7 +21,7 @@ import {
   planificarAnexos,
 } from "../documentos/anexos.js";
 /** Versión del motor: con el mismo motor y el mismo modelo, los mismos bytes. */
-export const MOTOR_PDF = 3;
+export const MOTOR_PDF = 10;
 const NOMBRE_MONEDA = { NIO: "Córdobas", USD: "Dólares" };
 const ESTADO_SOPORTE = {
   presente: "Presentes",
@@ -37,11 +37,11 @@ export const ESTADO_LIQUIDACION = {
 };
 const TEMAS = {
   ejecutivo: {
-    tinta: rgb(0.11, 0.15, 0.22),
-    suave: rgb(0.38, 0.43, 0.5),
-    acento: rgb(0.09, 0.2, 0.36),
-    fondo: rgb(0.94, 0.96, 0.98),
-    linea: rgb(0.82, 0.86, 0.9),
+    tinta: rgb(0.06, 0.13, 0.1),
+    suave: rgb(0.3, 0.36, 0.33),
+    acento: rgb(0.12, 0.32, 0.22),
+    fondo: rgb(0.92, 0.96, 0.94),
+    linea: rgb(0.79, 0.86, 0.82),
     cuerpo: 8.6,
   },
   formal: {
@@ -195,6 +195,11 @@ export async function informePdf(modelo, files) {
 
   // Encabezado
   nueva();
+  const logo = o.logotipo
+    ? await (o.logotipo.startsWith("data:image/png;")
+        ? doc.embedPng(base64ABytes(o.logotipo.split(",")[1]))
+        : doc.embedJpg(base64ABytes(o.logotipo.split(",")[1])))
+    : null;
   if (formal) {
     texto(o.titulo, M, y - 14, { font: negrita, size: 16 });
     derecha(modelo.codigo, W - M, y - 14, { font: negrita, size: 10 });
@@ -227,11 +232,29 @@ export async function informePdf(modelo, files) {
       size: 9,
       color: blanco,
     });
-    derecha(`Revisión ${o.revision}`, W - M, H - 41, {
+    derecha(`Revisión ${o.revision}`, W - M - (logo ? 54 : 0), H - 41, {
       size: 8,
       color: rgb(0.8, 0.85, 0.93),
     });
     y = H - alto - 22;
+  }
+  if (logo) {
+    const proporcion = Math.min(42 / logo.width, 32 / logo.height);
+    const baseLogo = formal ? y - 35 : H - 74;
+    page.drawRectangle({
+      x: W - M - 48,
+      y: baseLogo,
+      width: 48,
+      height: 35,
+      color: rgb(1, 1, 1),
+    });
+    page.drawImage(logo, {
+      x: W - M - 45,
+      y: baseLogo + 2,
+      width: logo.width * proporcion,
+      height: logo.height * proporcion,
+    });
+    if (formal) y -= 42;
   }
 
   // Datos del alcance, en dos columnas
@@ -241,7 +264,7 @@ export async function informePdf(modelo, files) {
     ["Destinatario", o.destinatario || "No indicado"],
     ["Identificador", `${modelo.codigo} · revisión ${o.revision}`],
     ["Corte del informe", fechaCorta(o.corte)],
-    ["Emitido", emision(o.generado)],
+    ["Emitido", o.generado_local || emision(o.generado)],
   ];
   const col = ancho / 2;
   for (let i = 0; i < datos.length; i += 2) {
@@ -309,13 +332,32 @@ export async function informePdf(modelo, files) {
       ? `Liquidación del dinero al corte: ${liquidaciones.map((l) => `${l.gestion}, ${ESTADO_LIQUIDACION[l.estado]}`).join("; ")}. `
       : fin
         ? "Saldos de dinero al corte: ver el estado financiero. "
-        : "Liquidación del dinero: sin movimientos de dinero registrados. ") +
+        : modelo.financieroLimitado
+          ? "Saldos generales no incluidos por el alcance parcial de este informe. "
+          : "Liquidación del dinero: sin movimientos de dinero registrados. ") +
       "El cierre de una gestión no equivale a su liquidación, y emitir este informe no equivale a aprobación ni a pago. " +
       "Córdobas y dólares se totalizan por separado, sin conversión." +
       (modelo.tipo === "parte"
         ? " Los importes son la parte asignada a este destinatario; los registros de otros destinos y los personales no se incluyen."
         : ""),
   );
+
+  if (fin?.recepciones?.length) {
+    titulo("Dinero recibido");
+    parrafo(
+      "Las entregas pueden incluir importes aplicados a otras gestiones.",
+    );
+    for (const r of fin.recepciones)
+      parrafo(
+        `${fechaCorta(r.fecha)} · ${r.parte} · recibido ${dinero(r.total, r.moneda)} · sin aplicar ${dinero(r.sin_aplicar, r.moneda)}${r.referencia ? ` · Ref. ${r.referencia}` : ""}`,
+      );
+  } else if (
+    ["gestion", "gestiones"].includes(modelo.tipo) &&
+    !modelo.financieroLimitado
+  ) {
+    titulo("Dinero recibido");
+    parrafo("No hay entregas de dinero registradas para este alcance.");
+  }
 
   // Tabla de compras
   titulo("Detalle de compras");
@@ -386,7 +428,11 @@ export async function informePdf(modelo, files) {
         )
       : [];
     const importe = [dinero(fila.importe, c.moneda)];
-    if (fila.asignado != null && fila.asignado !== c.importe)
+    if (
+      modelo.tipo !== "parte" &&
+      fila.asignado != null &&
+      fila.asignado !== c.importe
+    )
       importe.push(`de ${dinero(c.importe, c.moneda)}`);
     const celdas = {
       n: [String(fila.numero)],
@@ -398,7 +444,7 @@ export async function informePdf(modelo, files) {
         libre * 0.4 - 2 * pad,
       ),
       doc: partir(
-        limpio(c.factura || "Sin número"),
+        limpio(c.factura || "No registrado"),
         regular,
         size,
         fijas.doc - 2 * pad,
@@ -469,12 +515,50 @@ export async function informePdf(modelo, files) {
 
   // Estado financiero al corte, derivado de los movimientos
   if (fin) {
-    titulo("Estado financiero al corte");
+    if (fin.cuentas?.length) {
+      titulo("Conciliación económica al corte");
+      const campos = [
+        ["recibido", "Fondos aplicados"],
+        ["usado_fondo", "Pagado con fondos"],
+        ["aportado_propio", "Aporte propio"],
+        ["por_reembolsar", "Por reembolsar"],
+        ["reembolsado", "Reembolso recibido"],
+        ["devuelto", "Devuelto"],
+        ["traslado_entrada", "Traslado recibido"],
+        ["traslado_salida", "Traslado enviado"],
+        ["custodia", "En custodia"],
+        ["deuda_proveedor", "Deuda a proveedor"],
+        ["por_regularizar", "Por regularizar"],
+        ["regularizacion_original", "Obligación original por regularizar"],
+        ["regularizacion_repuesta", "Repuesto a custodia"],
+        ["regularizacion_directa", "Devuelto directamente"],
+      ];
+      for (const c of fin.cuentas) {
+        parrafo(`${c.gestion || "Sin gestión"} · ${c.parte} · ${c.moneda}`);
+        for (const [clave, etiqueta] of campos)
+          if (
+            c[clave] ||
+            (clave === "por_regularizar" && c.regularizacion_original) ||
+            (clave === "custodia" && (c.recibido || c.usado_fondo))
+          ) {
+            espacio(16);
+            texto(etiqueta, M, y, { size });
+            derecha(dinero(c[clave], c.moneda), M + ancho, y, {
+              font: negrita,
+              size,
+            });
+            y -= 14;
+          }
+      }
+    }
+    if (!fin.cuentas?.length) titulo("Conciliación económica al corte");
     if (!fin.saldos.length) {
       texto("Sin saldos pendientes: lo registrado está liquidado.", M, y);
       y -= 14;
     }
-    for (const s of fin.saldos) {
+    for (const s of fin.saldos.filter(
+      (s) => !fin.cuentas?.length || s.tipo === "deuda_proveedor",
+    )) {
       const etiqueta = partir(
         limpio(textoSaldo(s)),
         regular,
@@ -499,12 +583,23 @@ export async function informePdf(modelo, files) {
       y = base - size - 4;
     }
     y -= 6;
-    parrafo(
-      "Los saldos se calculan a partir de los anticipos, pagos, reembolsos, devoluciones y traslados registrados hasta el corte. Nunca se compensan entre sí.",
-    );
     y -= 4;
   }
 
+  const movimientosAdicionales = (fin?.movimientos || []).filter(
+    (m) =>
+      !["Pago con fondo", "Pago propio", "Pago directo de tercero"].includes(
+        m.tipo,
+      ),
+  );
+  if (movimientosAdicionales.length) {
+    espacio(Math.min(160, 45 + movimientosAdicionales.length * 11));
+    titulo("Otros movimientos de dinero");
+    for (const m of movimientosAdicionales)
+      parrafo(
+        `${m.fecha ? fechaCorta(m.fecha) : "Fecha no registrada"} · ${m.tipo} · ${m.gestion} · ${m.parte} · ${dinero(m.importe, m.moneda)}${m.referencia ? ` · Ref. ${m.referencia}` : ""}${m.detalle && m.fecha ? ` · ${m.detalle}` : ""}`,
+      );
+  }
   // Relación de comprobantes
   titulo("Relación de comprobantes");
   const conteo = {};
@@ -514,8 +609,18 @@ export async function informePdf(modelo, files) {
     .filter((k) => conteo[k])
     .map((k) => `${ESTADO_SOPORTE[k]}: ${conteo[k]}`)
     .join(" · ");
-  texto(resumen || "Sin compras.", M, y, { font: negrita });
-  y -= 14;
+  parrafo(
+    resumen
+      ? `Compras con comprobante: ${conteo.presente || 0}${Object.entries(
+          ESTADO_SOPORTE,
+        )
+          .filter(([k]) => k !== "presente" && conteo[k])
+          .map(([k, v]) => ` · ${v}: ${conteo[k]}`)
+          .join("")}`
+      : "Sin compras.",
+    { font: negrita, color: tema.tinta },
+  );
+  y -= 4;
   for (const f of modelo.filas.filter((f) => f.soporte.estado !== "presente")) {
     espacio(14);
     texto(
@@ -600,7 +705,11 @@ export async function informePdf(modelo, files) {
         { font: negrita, size: 8, color: tema.suave },
       );
       texto(anexo.titulo, M, top - 25, { font: negrita, size: 12 });
-      derecha(dinero(c.importe, c.moneda), W - M, top - 25, {
+      const importeAnexo =
+        modelo.tipo === "parte"
+          ? modelo.filas.find((f) => f.numero === anexo.fila)?.importe
+          : c.importe;
+      derecha(dinero(importeAnexo ?? 0, c.moneda), W - M, top - 25, {
         font: negrita,
         size: 12,
         color: tema.acento,

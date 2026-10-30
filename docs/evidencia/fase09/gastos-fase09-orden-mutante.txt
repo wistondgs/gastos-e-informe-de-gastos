@@ -1,0 +1,42 @@
+✖ caja obtiene las dos entregas individuales desde el historial de la gestión (249.376434ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 704.751667
+
+✖ failing tests:
+
+test at ../../../../tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:12:1
+✖ caja obtiene las dos entregas individuales desde el historial de la gestión (249.376434ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+    [
+      [
+  +     '22/10/2026',
+  +     3000
+  +   ],
+  +   [
+        '21/10/2026',
+        1000
+      ],
+  -   [
+  -     '22/10/2026',
+  -     3000
+  -   ]
+    ]
+  
+      at TestContext.<anonymous> (file:///tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:73:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ [ '22/10/2026', 3000 ], [ '21/10/2026', 1000 ] ],
+    expected: [ [ '21/10/2026', 1000 ], [ '22/10/2026', 3000 ] ],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }

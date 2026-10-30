@@ -1,5 +1,7 @@
 <script setup>
-import { ref, watch, onMounted, nextTick } from "vue";
+import { ref, watch, onMounted, nextTick, computed } from "vue";
+import { bordes, cambiarBorde, cambiarZoom } from "./recorte.js";
+import { recorteSeguro } from "../documentos/anexos.js";
 const props = defineProps({
   src: { type: String, required: true },
   inicial: { type: Object, required: true },
@@ -14,19 +16,19 @@ const anterior =
 const rotacion = ref(props.inicial.rotacion || 0),
   enderezar = ref(props.inicial.enderezar || 0);
 const recorte = ref(anterior || { x: 0, y: 0, w: 1, h: 1 });
+const limites = computed(() => bordes(recorte.value));
+function ajustarBorde(lado, valor) {
+  recorte.value = cambiarBorde(recorte.value, lado, valor);
+}
+function ampliar(direccion) {
+  recorte.value = cambiarZoom(recorte.value, direccion);
+}
 let foto = null;
 function parametros() {
   const r = Object.fromEntries(
     Object.entries(recorte.value).map(([k, v]) => [k, Number(v)]),
   );
-  if (
-    r.x < 0 ||
-    r.y < 0 ||
-    r.w < 0.2 ||
-    r.h < 0.2 ||
-    r.x + r.w > 1 ||
-    r.y + r.h > 1
-  )
+  if (!recorteSeguro(r))
     throw new Error(
       "El recorte debe quedar dentro de la imagen y conservar al menos un 20 % por lado.",
     );
@@ -103,7 +105,7 @@ watch([rotacion, enderezar, recorte], dibujar, { deep: true });
   <section class="editor">
     <h3>Ajustar comprobante</h3>
     <p>
-      La imagen original se conserva. El recorte usa fracciones entre 0 y 1.
+      La imagen original se conserva. Ajustá los bordes y mirá la vista previa.
     </p>
     <canvas
       ref="lienzo"
@@ -125,22 +127,36 @@ watch([rotacion, enderezar, recorte], dibujar, { deep: true });
         max="15"
         step="0.5"
     /></label>
+    <div class="botones">
+      <button type="button" @click="ampliar(-1)">Acercar</button
+      ><button type="button" @click="ampliar(1)">Alejar</button>
+    </div>
     <div class="campos">
       <label
         v-for="(titulo, campo) in {
-          x: 'Izquierda',
-          y: 'Arriba',
-          w: 'Ancho',
-          h: 'Alto',
+          izquierda: 'Izquierda',
+          arriba: 'Arriba',
+          derecha: 'Derecha',
+          abajo: 'Abajo',
         }"
         :key="campo"
-        >{{ titulo
-        }}<input
-          v-model.number="recorte[campo]"
-          type="number"
+        >{{ titulo }}: {{ limites[campo] }} %<input
+          :value="limites[campo]"
+          @input="ajustarBorde(campo, $event.target.value)"
+          type="range"
           min="0"
-          max="1"
-          step="0.01"
+          :max="
+            80 -
+            limites[
+              {
+                izquierda: 'derecha',
+                derecha: 'izquierda',
+                arriba: 'abajo',
+                abajo: 'arriba',
+              }[campo]
+            ]
+          "
+          step="1"
       /></label>
     </div>
     <p v-if="error" role="alert">{{ error }}</p>

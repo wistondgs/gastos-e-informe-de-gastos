@@ -1,0 +1,345 @@
+✖ caja obtiene las dos entregas individuales desde el historial de la gestión (142.985619ms)
+✔ la recepción permite elegir fecha y la presenta antes de guardar (20.238141ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 1
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 677.348585
+
+✖ failing tests:
+
+test at ../../../../tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:7:1
+✖ caja obtiene las dos entregas individuales desde el historial de la gestión (142.985619ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /api\.gestiones\.detalle\(id\)/. Input:
+  
+  '<script setup>\n' +
+    'import { computed, onMounted, ref, watch } from "vue";\n' +
+    'import { dinero } from "../../dominio/compra.js";\n' +
+    'import { variablesTema } from "./guia.js";\n' +
+    'const props = defineProps({\n' +
+    '  api: { type: Object, required: true },\n' +
+    '  gestiones: { type: Array, default: () => [] },\n' +
+    '  partes: { type: Array, default: () => [] },\n' +
+    '  compras: { type: Array, default: () => [] },\n' +
+    '  tema: { type: String, default: "bosque" },\n' +
+    '  aprendizaje: { type: Boolean, default: true },\n' +
+    '});\n' +
+    'const emit = defineEmits([\n' +
+    '  "cerrar",\n' +
+    '  "gestion",\n' +
+    '  "compra",\n' +
+    '  "registrar",\n' +
+    '  "recibir",\n' +
+    '  "aprendizaje",\n' +
+    ']);\n' +
+    'const cuentas = ref([]),\n' +
+    '  recepciones = ref([]),\n' +
+    '  gestion = ref("todas"),\n' +
+    '  parte = ref("todas"),\n' +
+    '  error = ref(""),\n' +
+    '  cargando = ref(true);\n' +
+    'const historial = ref([]),\n' +
+    '  errorHistorial = ref("");\n' +
+    'let peticionHistorial = 0;\n' +
+    'const estilo = computed(() => variablesTema(props.tema));\n' +
+    'const nombreParte = (id) =>\n' +
+    '  props.partes.find((p) => p.id === id)?.nombre ||\n' +
+    '  (id ? "Persona o empresa no disponible" : "Personal o sin asignar");\n' +
+    'const nombreGestion = (id) =>\n' +
+    '  props.gestiones.find((g) => g.id === id)?.nombre ||\n' +
+    '  (id ? "Gestión no disponible" : "Sin gestión");\n' +
+    'const filas = computed(() =>\n' +
+    '  cuentas.value.filter(\n' +
+    '    (c) =>\n' +
+    '      (gestion.value === "todas" ||\n' +
+    '        (gestion.value === "sin-gestion"\n' +
+    '          ? !c.gestion_id\n' +
+    '          : c.gestion_id === gestion.value)) &&\n' +
+    '      (parte.value === "todas" || c.parte_id === parte.value),\n' +
+    '  ),\n' +
+    ');\n' +
+    'const sinAplicar = computed(() =>\n' +
+    '  recepciones.value.filter(\n' +
+    '    (r) =>\n' +
+    '      !r.anulada &&\n' +
+    '      r.sin_aplicar > 0 &&\n' +
+    '      (parte.value === "todas" || r.parte_id === parte.value),\n' +
+    '  ),\n' +
+    ');\n' +
+    'const sinGestion = computed(() =>\n' +
+    '  props.compras.filter((c) => !c.gestion_id && !c.anulada),\n' +
+    ');\n' +
+    'watch(gestion, async (id) => {\n' +
+    '  const turno = ++peticionHistorial;\n' +
+    '  historial.value = [];\n' +
+    '  errorHistorial.value = "";\n' +
+    '  if (id === "todas" || id === "sin-gestion") return;\n' +
+    '  try {\n' +
+    '    const detalle = await props.api.gestiones.listar(id);\n' +
+    '    if (turno === peticionHistorial) historial.value = detalle.historial;\n' +
+    '  } catch (e) {\n' +
+    '    if (turno === peticionHistorial)\n' +
+    '      errorHistorial.value = e?.message || "No se pudo cargar el historial.";\n' +
+    '  }\n' +
+    '});\n' +
+    'const movimientos = computed(() =>\n' +
+    '  historial.value.filter(\n' +
+    '    (m) =>\n' +
+    '      !m.anulada &&\n' +
+    '      [\n' +
+    '        "anticipo",\n' +
+    '        "reembolso",\n' +
+    '        "compra",\n' +
+    '        "pago",\n' +
+    '        "devolucion",\n' +
+    '        "traslado",\n' +
+    '      ].includes(m.tipo) &&\n' +
+    '      (parte.value === "todas" ||\n' +
+    '        (m.tipo !== "compra" && m.parte_id === parte.value)),\n' +
+    '  ),\n' +
+    ');\n' +
+    'const tipoMovimiento = (m) =>\n' +
+    '  ({\n' +
+    '    anticipo: "Dinero aplicado a la gestión",\n' +
+    '    reembolso: "Reembolso recibido",\n' +
+    '    compra: "Compra registrada",\n' +
+    '    pago:\n' +
+    '      m.origen === "fondo"\n' +
+    '        ? "Pagado con fondos"\n' +
+    '        : m.origen === "propio"\n' +
+    '          ? "Pagado con dinero propio"\n' +
+    '          : "Pago directo",\n' +
+    '    devolucion: "Fondos devueltos",\n' +
+    '    traslado: "Traslado de fondos",\n' +
+    '  })[m.tipo];\n' +
+    'onMounted(async () => {\n' +
+    '  try {\n' +
+    '    const [c, r] = await Promise.all([\n' +
+    '      props.api.saldos.cuentas(),\n' +
+    '      props.api.fondos.recepciones(),\n' +
+    '    ]);\n' +
+    '    cuentas.value = c.cuentas;\n' +
+    '    recepciones.value = r;\n' +
+    '  } catch (e) {\n' +
+    '    error.value = e?.message || "No se pudo cargar el estado.";\n' +
+    '  } finally {\n' +
+    '    cargando.value = false;\n' +
+    '  }\n' +
+    '});\n' +
+    '</script>\n' +
+    '<template>\n' +
+    '  <div class="guiada" :style="estilo">\n' +
+    '    <header class="barra">\n' +
+    '      <button\n' +
+    '        type="button"\n' +
+    '        class="redondo"\n' +
+    '        aria-label="Volver al inicio"\n' +
+    `        @click="emit('cerrar')"\n` +
+    '      >\n' +
+    '        ‹</button\n' +
+    '      ><strong>Ver mi caja</strong\n' +
+    '      ><button\n' +
+    '        type="button"\n' +
+    '        class="redondo"\n' +
+    '        :class="{ encendido: aprendizaje }"\n' +
+    '        role="switch"\n' +
+    '        :aria-checked="aprendizaje"\n' +
+    '        aria-label="Modo aprendizaje"\n' +
+    `        @click="emit('aprendizaje', !aprendizaje)"\n` +
+    '      >\n' +
+    '        ?\n' +
+    '      </button>\n' +
+    '    </header>\n' +
+    '    <main class="cuerpo">\n' +
+    '      <h1>Tu dinero, explicado</h1>\n' +
+    '      <p v-if="aprendizaje">\n' +
+    '        Elegí una gestión o persona para ver sus importes. Cada moneda se\n' +
+    '        muestra por separado. La custodia es dinero que recibiste para gastar;\n' +
+    '        el reembolso es dinero propio que alguien te debe.\n' +
+    '      </p>\n' +
+    '      <p v-if="error" class="error" role="alert">{{ error }}</p>\n' +
+    '      <p v-if="cargando">Cargando tus movimientos…</p>\n' +
+    '      <label\n' +
+    '        >Gestión\n' +
+    '        <select v-model="gestion">\n' +
+    '          <option value="todas">Todas las gestiones</option>\n' +
+    '          <option value="sin-gestion">Sin gestión</option>\n' +
+    '          <option v-for="g in gestiones" :key="g.id" :value="g.id">\n' +
+    '            {{ g.nombre }}{{ g.fecha_fin ? " · Cerrada" : " · Abierta" }}\n' +
+    '          </option>\n' +
+    '        </select></label\n' +
+    '      >\n' +
+    '      <label\n' +
+    '        >Persona o empresa\n' +
+    '        <select v-model="parte">\n' +
+    '          <option value="todas">Todas las personas y empresas</option>\n' +
+    '          <option v-for="p in partes" :key="p.id" :value="p.id">\n' +
+    '            {{ p.nombre }}\n' +
+    '          </option>\n' +
+    '        </select></label\n' +
+    '      >\n' +
+    '      <p v-if="!cargando && !filas.length">\n' +
+    '        No hay movimientos para esta selección.\n' +
+    '      </p>\n' +
+    '      <article\n' +
+    '        v-for="c in filas"\n' +
+    '        :key="`${c.gestion_id}-${c.parte_id}-${c.moneda}`"\n' +
+    '        class="tarjeta-cuenta"\n' +
+    '      >\n' +
+    '        <h2>{{ nombreGestion(c.gestion_id) }}</h2>\n' +
+    '        <p>\n' +
+    '          <strong>{{ nombreParte(c.parte_id) }} · {{ c.moneda }}</strong>\n' +
+    '        </p>\n' +
+    '        <dl>\n' +
+    '          <div>\n' +
+    '            <dt>Fondos aplicados a esta gestión</dt>\n' +
+    '            <dd>{{ dinero(c.recibido, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '          <div>\n' +
+    '            <dt>Usado de esos fondos</dt>\n' +
+    '            <dd>{{ dinero(c.usado_fondo, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '          <div>\n' +
+    '            <dt>Dinero disponible en custodia</dt>\n' +
+    '            <dd>{{ dinero(c.custodia, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '          <div>\n' +
+    '            <dt>Puesto de mi dinero</dt>\n' +
+    '            <dd>{{ dinero(c.aportado_propio, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '          <div>\n' +
+    '            <dt>\n' +
+    '              {{\n' +
+    '                c.parte_id\n' +
+    '                  ? nombreParte(c.parte_id) + " me debe reembolsar"\n' +
+    '                  : "Reembolso pendiente"\n' +
+    '              }}\n' +
+    '            </dt>\n' +
+    '            <dd>{{ dinero(c.por_reembolsar, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '          <div>\n' +
+    '            <dt>Reembolsos recibidos</dt>\n' +
+    '            <dd>{{ dinero(c.reembolsado, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '          <div>\n' +
+    '            <dt>\n' +
+    '              {{\n' +
+    '                c.parte_id\n' +
+    '                  ? nombreParte(c.parte_id) + " debe a proveedores"\n' +
+    '                  : "Deuda a proveedores"\n' +
+    '              }}\n' +
+    '            </dt>\n' +
+    '            <dd>{{ dinero(c.deuda_proveedor, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '          <div v-if="c.por_regularizar">\n' +
+    '            <dt>Importe que necesita regularización</dt>\n' +
+    '            <dd>{{ dinero(c.por_regularizar, c.moneda) }}</dd>\n' +
+    '          </div>\n' +
+    '        </dl>\n' +
+    '        <button\n' +
+    '          v-if="c.gestion_id"\n' +
+    '          type="button"\n' +
+    '          class="secundario"\n' +
+    `          @click="emit('gestion', c.gestion_id)"\n` +
+    '        >\n' +
+    '          Ver movimientos e historial\n' +
+    '        </button>\n' +
+    '        <p v-else>\n' +
+    '          Estos movimientos no tienen gestión. Abrí la compra para revisarla o\n' +
+    '          regularizarla.\n' +
+    '        </p>\n' +
+    '      </article>\n' +
+    '      <section v-if="sinAplicar.length">\n' +
+    '        <h2>Dinero recibido sin aplicar</h2>\n' +
+    '        <p>\n' +
+    '          Está disponible para asignar después; no forma parte del saldo de una\n' +
+    '          gestión.\n' +
+    '        </p>\n' +
+    '        <p v-for="r in sinAplicar" :key="r.id">\n' +
+    '          {{ nombreParte(r.parte_id) }} ·\n' +
+    '          {{ dinero(r.sin_aplicar, r.moneda) }} · {{ r.fecha }}\n' +
+    '        </p>\n' +
+    `        <button class="secundario" type="button" @click="emit('recibir')">\n` +
+    '          Ver entradas y aplicar dinero\n' +
+    '        </button>\n' +
+    '      </section>\n' +
+    `      <section v-if="gestion !== 'todas' && gestion !== 'sin-gestion'">\n` +
+    '        <h2>Movimientos de la gestión</h2>\n' +
+    '        <p>\n' +
+    '          La compra se muestra una vez; sus pagos explican cómo se financió.\n' +
+    '        </p>\n' +
+    `        <p v-if="parte !== 'todas'">\n` +
+    '          Con un filtro de persona se muestran solo movimientos que la\n' +
+    '          identifican; consultá la gestión completa para ver todas las compras y\n' +
+    '          pagos.\n' +
+    '        </p>\n' +
+    '        <p v-if="errorHistorial" role="alert" class="error">\n' +
+    '          {{ errorHistorial }}\n' +
+    '        </p>\n' +
+    '        <p v-else-if="!movimientos.length">\n' +
+    '          No hay movimientos visibles para esta selección.\n' +
+    '        </p>\n' +
+    '        <article\n' +
+    '          v-for="m in movimientos"\n' +
+    '          :key="`${m.tipo}-${m.id}`"\n' +
+    '          class="tarjeta-cuenta"\n' +
+    '        >\n' +
+    '          <strong>{{ tipoMovimiento(m) }}</strong>\n' +
+    '          <p>\n' +
+    '            {{ m.fecha }} · {{ m.moneda ? dinero(m.importe, m.moneda) : "" }}\n' +
+    '          </p>\n' +
+    '          <p v-if="m.concepto">{{ m.concepto }} · {{ m.proveedor }}</p>\n' +
+    '          <p v-if="m.referencia">Referencia: {{ m.referencia }}</p>\n' +
+    '          <p v-if="m.parte_id">{{ nombreParte(m.parte_id) }}</p>\n' +
+    '          <button\n' +
+    `            v-if="m.tipo === 'compra' || m.tipo === 'pago'"\n` +
+    '            class="secundario"\n' +
+    '            type="button"\n' +
+    `            @click="emit('compra', m.tipo === 'compra' ? m.id : m.compra_id)"\n` +
+    '          >\n' +
+    '            Ver compra y comprobantes\n' +
+    '          </button>\n' +
+    '        </article>\n' +
+    '      </section>\n' +
+    '      <section\n' +
+    '        v-if="\n' +
+    '          sinGestion.length &&\n' +
+    "          gestion !== 'todas' &&\n" +
+    "          gestion === 'sin-gestion' &&\n" +
+    "          parte === 'todas'\n" +
+    '        "\n' +
+    '      >\n' +
+    '        <h2>Compras sin gestión</h2>\n' +
+    '        <button\n' +
+    '          v-for="c in sinGestion"\n' +
+    '          :key="c.id"\n' +
+    '          class="secundario"\n' +
+    '          type="button"\n' +
+    `          @click="emit('compra', c.id)"\n` +
+    '        >\n' +
+    '          {{ c.concepto }} · {{ dinero(c.importe, c.moneda) }}\n' +
+    '        </button>\n' +
+    '      </section>\n' +
+    '      <div class="acciones">\n' +
+    `        <button class="primario" type="button" @click="emit('registrar')">\n` +
+    '          Registrar una compra</button\n' +
+    `        ><button class="secundario" type="button" @click="emit('recibir')">\n` +
+    '          Ver movimientos de dinero\n' +
+    '        </button>\n' +
+    '      </div>\n' +
+    '    </main>\n' +
+    '  </div>'... 702 more characters
+  
+      at TestContext.<anonymous> (file:///tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:17:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '<script setup>\nimport { computed, onMounted, ref, watch } from "vue";\nimport { dinero } from "../../dominio/compra.js";\nimport { variablesTema } from "./guia.js";\nconst props = defineProps({\n  api: { type: Object, required: true },\n  gestiones: { type: Array, default: () => [] },\n  partes: { type: Array, default: () => [] },\n  compras: { type: Array, default: () => [] },\n  tema: { type: String, default: "bosque" },\n  aprendizaje: { type: Boolean, default: true },\n});\nconst emit = defineEmits([\n  "cerrar",\n  "gestion",\n  "compra",\n  "registrar",\n  "recibir",\n  "aprendizaje",\n]);\nconst cuentas = ref([]),\n  recepciones = ref([]),\n  gestion = ref("todas"),\n  parte = ref("todas"),\n  error = ref(""),\n  cargando = ref(true);\nconst historial = ref([]),\n  errorHistorial = ref("");\nlet peticionHistorial = 0;\nconst estilo = computed(() => variablesTema(props.tema));\nconst nombreParte = (id) =>\n  props.partes.find((p) => p.id === id)?.nombre ||\n  (id ? "Persona o empresa no disponible" : "Personal o sin asignar");\nconst nombreGestion = (id) =>\n  props.gestiones.find((g) => g.id === id)?.nombre ||\n  (id ? "Gestión no disponible" : "Sin gestión");\nconst filas = computed(() =>\n  cuentas.value.filter(\n    (c) =>\n      (gestion.value === "todas" ||\n        (gestion.value === "sin-gestion"\n          ? !c.gestion_id\n          : c.gestion_id === gestion.value)) &&\n      (parte.value === "todas" || c.parte_id === parte.value),\n  ),\n);\nconst sinAplicar = computed(() =>\n  recepciones.value.filter(\n    (r) =>\n      !r.anulada &&\n      r.sin_aplicar > 0 &&\n      (parte.value === "todas" || r.parte_id === parte.value),\n  ),\n);\nconst sinGestion = computed(() =>\n  props.compras.filter((c) => !c.gestion_id && !c.anulada),\n);\nwatch(gestion, async (id) => {\n  const turno = ++peticionHistorial;\n  historial.value = [];\n  errorHistorial.value = "";\n  if (id === "todas" || id === "sin-gestion") return;\n  try {\n    const detalle = await props.api.gestiones.listar(id);\n    if (turno === peticionHistorial) historial.value = detalle.historial;\n  } catch (e) {\n    if (turno === peticionHistorial)\n      errorHistorial.value = e?.message || "No se pudo cargar el historial.";\n  }\n});\nconst movimientos = computed(() =>\n  historial.value.filter(\n    (m) =>\n      !m.anulada &&\n      [\n        "anticipo",\n        "reembolso",\n        "compra",\n        "pago",\n        "devolucion",\n        "traslado",\n      ].includes(m.tipo) &&\n      (parte.value === "todas" ||\n        (m.tipo !== "compra" && m.parte_id === parte.value)),\n  ),\n);\nconst tipoMovimiento = (m) =>\n  ({\n    anticipo: "Dinero aplicado a la gestión",\n    reembolso: "Reembolso recibido",\n    compra: "Compra registrada",\n    pago:\n      m.origen === "fondo"\n        ? "Pagado con fondos"\n        : m.origen === "propio"\n          ? "Pagado con dinero propio"\n          : "Pago directo",\n    devolucion: "Fondos devueltos",\n    traslado: "Traslado de fondos",\n  })[m.tipo];\nonMounted(async () => {\n  try {\n    const [c, r] = await Promise.all([\n      props.api.saldos.cuentas(),\n      props.api.fondos.recepciones(),\n    ]);\n    cuentas.value = c.cuentas;\n    recepciones.value = r;\n  } catch (e) {\n    error.value = e?.message || "No se pudo cargar el estado.";\n  } finally {\n    cargando.value = false;\n  }\n});\n</script>\n<template>\n  <div class="guiada" :style="estilo">\n    <header class="barra">\n      <button\n        type="button"\n        class="redondo"\n        aria-label="Volver al inicio"\n        @click="emit(\'cerrar\')"\n      >\n        ‹</button\n      ><strong>Ver mi caja</strong\n      ><button\n        type="button"\n        class="redondo"\n        :class="{ encendido: aprendizaje }"\n        role="switch"\n        :aria-checked="aprendizaje"\n        aria-label="Modo aprendizaje"\n        @click="emit(\'aprendizaje\', !aprendizaje)"\n      >\n        ?\n      </button>\n    </header>\n    <main class="cuerpo">\n      <h1>Tu dinero, explicado</h1>\n      <p v-if="aprendizaje">\n        Elegí una gestión o persona para ver sus importes. Cada moneda se\n        muestra por separado. La custodia es dinero que recibiste para gastar;\n        el reembolso es dinero propio que alguien te debe.\n      </p>\n      <p v-if="error" class="error" role="alert">{{ error }}</p>\n      <p v-if="cargando">Cargando tus movimientos…</p>\n      <label\n        >Gestión\n        <select v-model="gestion">\n          <option value="todas">Todas las gestiones</option>\n          <option value="sin-gestion">Sin gestión</option>\n          <option v-for="g in gestiones" :key="g.id" :value="g.id">\n            {{ g.nombre }}{{ g.fecha_fin ? " · Cerrada" : " · Abierta" }}\n          </option>\n        </select></label\n      >\n      <label\n        >Persona o empresa\n        <select v-model="parte">\n          <option value="todas">Todas las personas y empresas</option>\n          <option v-for="p in partes" :key="p.id" :value="p.id">\n            {{ p.nombre }}\n          </option>\n        </select></label\n      >\n      <p v-if="!cargando && !filas.length">\n        No hay movimientos para esta selección.\n      </p>\n      <article\n        v-for="c in filas"\n        :key="`${c.gestion_id}-${c.parte_id}-${c.moneda}`"\n        class="tarjeta-cuenta"\n      >\n        <h2>{{ nombreGestion(c.gestion_id) }}</h2>\n        <p>\n          <strong>{{ nombreParte(c.parte_id) }} · {{ c.moneda }}</strong>\n        </p>\n        <dl>\n          <div>\n            <dt>Fondos aplicados a esta gestión</dt>\n            <dd>{{ dinero(c.recibido, c.moneda) }}</dd>\n          </div>\n          <div>\n            <dt>Usado de esos fondos</dt>\n            <dd>{{ dinero(c.usado_fondo, c.moneda) }}</dd>\n          </div>\n          <div>\n            <dt>Dinero disponible en custodia</dt>\n            <dd>{{ dinero(c.custodia, c.moneda) }}</dd>\n          </div>\n          <div>\n            <dt>Puesto de mi dinero</dt>\n            <dd>{{ dinero(c.aportado_propio, c.moneda) }}</dd>\n          </div>\n          <div>\n            <dt>\n              {{\n                c.parte_id\n                  ? nombreParte(c.parte_id) + " me debe reembolsar"\n                  : "Reembolso pendiente"\n              }}\n            </dt>\n            <dd>{{ dinero(c.por_reembolsar, c.moneda) }}</dd>\n          </div>\n          <div>\n            <dt>Reembolsos recibidos</dt>\n            <dd>{{ dinero(c.reembolsado, c.moneda) }}</dd>\n          </div>\n          <div>\n            <dt>\n              {{\n                c.parte_id\n                  ? nombreParte(c.parte_id) + " debe a proveedores"\n                  : "Deuda a proveedores"\n              }}\n            </dt>\n            <dd>{{ dinero(c.deuda_proveedor, c.moneda) }}</dd>\n          </div>\n          <div v-if="c.por_regularizar">\n            <dt>Importe que necesita regularización</dt>\n            <dd>{{ dinero(c.por_regularizar, c.moneda) }}</dd>\n          </div>\n        </dl>\n        <button\n          v-if="c.gestion_id"\n          type="button"\n          class="secundario"\n          @click="emit(\'gestion\', c.gestion_id)"\n        >\n          Ver movimientos e historial\n        </button>\n        <p v-else>\n          Estos movimientos no tienen gestión. Abrí la compra para revisarla o\n          regularizarla.\n        </p>\n      </article>\n      <section v-if="sinAplicar.length">\n        <h2>Dinero recibido sin aplicar</h2>\n        <p>\n          Está disponible para asignar después; no forma parte del saldo de una\n          gestión.\n        </p>\n        <p v-for="r in sinAplicar" :key="r.id">\n          {{ nombreParte(r.parte_id) }} ·\n          {{ dinero(r.sin_aplicar, r.moneda) }} · {{ r.fecha }}\n        </p>\n        <button class="secundario" type="button" @click="emit(\'recibir\')">\n          Ver entradas y aplicar dinero\n        </button>\n      </section>\n      <section v-if="gestion !== \'todas\' && gestion !== \'sin-gestion\'">\n        <h2>Movimientos de la gestión</h2>\n        <p>\n          La compra se muestra una vez; sus pagos explican cómo se financió.\n        </p>\n        <p v-if="parte !== \'todas\'">\n          Con un filtro de persona se muestran solo movimientos que la\n          identifican; consultá la gestión completa para ver todas las compras y\n          pagos.\n        </p>\n        <p v-if="errorHistorial" role="alert" class="error">\n          {{ errorHistorial }}\n        </p>\n        <p v-else-if="!movimientos.length">\n          No hay movimientos visibles para esta selección.\n        </p>\n        <article\n          v-for="m in movimientos"\n          :key="`${m.tipo}-${m.id}`"\n          class="tarjeta-cuenta"\n        >\n          <strong>{{ tipoMovimiento(m) }}</strong>\n          <p>\n            {{ m.fecha }} · {{ m.moneda ? dinero(m.importe, m.moneda) : "" }}\n          </p>\n          <p v-if="m.concepto">{{ m.concepto }} · {{ m.proveedor }}</p>\n          <p v-if="m.referencia">Referencia: {{ m.referencia }}</p>\n          <p v-if="m.parte_id">{{ nombreParte(m.parte_id) }}</p>\n          <button\n            v-if="m.tipo === \'compra\' || m.tipo === \'pago\'"\n            class="secundario"\n            type="button"\n            @click="emit(\'compra\', m.tipo === \'compra\' ? m.id : m.compra_id)"\n          >\n            Ver compra y comprobantes\n          </button>\n        </article>\n      </section>\n      <section\n        v-if="\n          sinGestion.length &&\n          gestion !== \'todas\' &&\n          gestion === \'sin-gestion\' &&\n          parte === \'todas\'\n        "\n      >\n        <h2>Compras sin gestión</h2>\n        <button\n          v-for="c in sinGestion"\n          :key="c.id"\n          class="secundario"\n          type="button"\n          @click="emit(\'compra\', c.id)"\n        >\n          {{ c.concepto }} · {{ dinero(c.importe, c.moneda) }}\n        </button>\n      </section>\n      <div class="acciones">\n        <button class="primario" type="button" @click="emit(\'registrar\')">\n          Registrar una compra</button\n        ><button class="secundario" type="button" @click="emit(\'recibir\')">\n          Ver movimientos de dinero\n        </button>\n      </div>\n    </main>\n  </div>'... 702 more characters,
+    expected: /api\.gestiones\.detalle\(id\)/,
+    operator: 'match',
+    diff: 'simple'
+  }

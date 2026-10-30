@@ -1,0 +1,55 @@
+✖ T3: PDF y Excel exponen fondos aplicados, usados, aporte y custodia con el mismo modelo (160.776143ms)
+✖ T5: el subconjunto no atribuye saldos de toda la gestión a las compras elegidas (50.916283ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 638.230323
+
+✖ failing tests:
+
+test at tests/conciliacion-v2.test.js:9:1
+✖ T3: PDF y Excel exponen fondos aplicados, usados, aporte y custodia con el mismo modelo (160.776143ms)
+  TypeError: Cannot read properties of undefined (reading 'find')
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/conciliacion-v2.test.js:15:36)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)
+
+test at tests/conciliacion-v2.test.js:23:1
+✖ T5: el subconjunto no atribuye saldos de toda la gestión a las compras elegidas (50.916283ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + {
+  +   liquidaciones: [
+  +     {
+  +       estado: 'pendiente',
+  +       gestion: 'Winston Managua'
+  +     }
+  +   ],
+  +   saldos: [
+  +     {
+  +       gestion: 'Winston Managua',
+  +       importe: 200000,
+  +       moneda: 'NIO',
+  +       parte: 'Agrícola de prueba',
+  +       proveedor: null,
+  +       tipo: 'por_reembolsar'
+  +     }
+  +   ]
+  + }
+  - null
+  
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/conciliacion-v2.test.js:29:46)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: { saldos: [ [Object] ], liquidaciones: [ [Object] ] },
+    expected: null,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

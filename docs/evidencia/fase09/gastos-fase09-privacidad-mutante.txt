@@ -1,0 +1,28 @@
+✖ Excel por destinatario no revela el total de una compra compartida (624.74646ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1942.260331
+
+✖ failing tests:
+
+test at ../../../../tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:206:1
+✖ Excel por destinatario no revela el total de una compra compartida (624.74646ms)
+  AssertionError [ERR_ASSERTION]: The input was expected to not match the regular expression /Otra empresa de prueba|1,000\.00|400\.00/. Input:
+  
+  'INFORME DE GASTOS POR EMPRESA O PERSONA Prueba GP-23F5175F-R01 Revisión 1 Empresa o persona Agrícola de prueba Gestiones Todas Responsable Juan Destinatario Agrícola Identificador GP-23F5175F-R01 · revisión 1 Corte del informe 27/10/2026 Emitido 27 oct 2026, 12:00 p. m. ASIGNADO CÓRDOBAS C$ 600.00 1 compra Saldos de dinero al corte: ver el estado financiero. El cierre de una gestión no equivale a su liquidación, y emitir este informe no equivale a aprobación ni a pago. Córdobas y dólares se totalizan por separado, sin conversión. Los importes son la parte asignada a este destinatario; los registros de otros destinos y los personales no se incluyen. DETALLE DE COMPRAS N.° Fecha Proveedor Documento Concepto Asignado Soporte 1 21/10/2026 Proveedor de prueba 0001230 Compra de prueba Gestión: Winston Managua C$ 600.00 de C$ 1,000.00 Ausente: falta la imagen Total córdobas (1) C$ 600.00 ESTADO FINANCIERO AL CORTE Por reembolsar al responsable, a cargo de Agrícola de prueba Winston Managua C$ 600.00 Los saldos se calculan a partir de los anticipos, pagos, reembolsos, devoluciones y traslados registrados hasta el corte. Nunca se compensan entre sí. RELACIÓN DE COMPROBANTES Ausentes: 1 Compra 1 · Proveedor de prueba · Ausente: falta la imagen GP-23F5175F-R01 · Revisión 1 · Corte 27/10/2026 Página 1 de 1'
+  
+      at TestContext.<anonymous> (file:///tmp/gastos-fase09-mutante/tests/caja-guiada.test.js:241:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'INFORME DE GASTOS POR EMPRESA O PERSONA Prueba GP-23F5175F-R01 Revisión 1 Empresa o persona Agrícola de prueba Gestiones Todas Responsable Juan Destinatario Agrícola Identificador GP-23F5175F-R01 · revisión 1 Corte del informe 27/10/2026 Emitido 27 oct 2026, 12:00 p. m. ASIGNADO CÓRDOBAS C$ 600.00 1 compra Saldos de dinero al corte: ver el estado financiero. El cierre de una gestión no equivale a su liquidación, y emitir este informe no equivale a aprobación ni a pago. Córdobas y dólares se totalizan por separado, sin conversión. Los importes son la parte asignada a este destinatario; los registros de otros destinos y los personales no se incluyen. DETALLE DE COMPRAS N.° Fecha Proveedor Documento Concepto Asignado Soporte 1 21/10/2026 Proveedor de prueba 0001230 Compra de prueba Gestión: Winston Managua C$ 600.00 de C$ 1,000.00 Ausente: falta la imagen Total córdobas (1) C$ 600.00 ESTADO FINANCIERO AL CORTE Por reembolsar al responsable, a cargo de Agrícola de prueba Winston Managua C$ 600.00 Los saldos se calculan a partir de los anticipos, pagos, reembolsos, devoluciones y traslados registrados hasta el corte. Nunca se compensan entre sí. RELACIÓN DE COMPROBANTES Ausentes: 1 Compra 1 · Proveedor de prueba · Ausente: falta la imagen GP-23F5175F-R01 · Revisión 1 · Corte 27/10/2026 Página 1 de 1',
+    expected: /Otra empresa de prueba|1,000\.00|400\.00/,
+    operator: 'doesNotMatch',
+    diff: 'simple'
+  }

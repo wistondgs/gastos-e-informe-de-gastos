@@ -1,5 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import ExcelJS from "exceljs";
 import {
   PDFDocument,
   PDFRawStream,
@@ -58,6 +59,23 @@ test("el informe al día 15 incluye compra, reparto y saldo anulados el día 20"
     .join(" ");
   assert.match(texto, /Compra histórica/);
   assert.match(texto, /Por reembolsar/);
+  const emitido = await api.informes.emitir({
+    alcance: { tipo: "parte", parte_id: "p" },
+    opciones,
+    exportar: false,
+  });
+  const libro = new ExcelJS.Workbook();
+  await libro.xlsx.load((await api.informes.excel(emitido.informe.id)).bytes);
+  const detalle = libro.getWorksheet("Compras").getRow(2);
+  assert.equal(detalle.getCell(6).value, "Compra histórica");
+  assert.equal(detalle.getCell(9).value, 1000);
+  const conciliacion = libro.getWorksheet("Fondos y saldos");
+  const saldos = [];
+  conciliacion.eachRow((fila) => {
+    if (String(fila.getCell(1).value).includes("Por reembolsar"))
+      saldos.push(fila.getCell(4).value);
+  });
+  assert.deepEqual(saldos, [1000]);
   const posterior = await api.informes.previsualizar({
     alcance: { tipo: "parte", parte_id: "p" },
     opciones: { ...opciones, corte: "2026-10-20" },

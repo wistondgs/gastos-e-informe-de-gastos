@@ -1,0 +1,18 @@
+✖ regularización mixta se vincula al pago y no inventa recepción (102.571983ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 541.613496
+
+✖ failing tests:
+
+test at tests/regularizaciones.test.js:13:1
+✖ regularización mixta se vincula al pago y no inventa recepción (102.571983ms)
+  TypeError: Cannot read properties of undefined (reading 'atribuir')
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/regularizaciones.test.js:15:30)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)

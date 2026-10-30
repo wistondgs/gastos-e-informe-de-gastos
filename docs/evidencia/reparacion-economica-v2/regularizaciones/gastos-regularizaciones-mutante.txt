@@ -1,0 +1,25 @@
+✖ sin atribución no se liquida; exceso, competencia y anulación preservan los saldos (127.738888ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 623.874277
+
+✖ failing tests:
+
+test at ../../../../tmp/gastos-regularizaciones-mutante/tests/regularizaciones.test.js:112:1
+✖ sin atribución no se liquida; exceso, competencia y anulación preservan los saldos (127.738888ms)
+  AssertionError [ERR_ASSERTION]: Missing expected rejection.
+      at async TestContext.<anonymous> (file:///tmp/gastos-regularizaciones-mutante/tests/regularizaciones.test.js:132:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: /excede/i,
+    operator: 'rejects',
+    diff: 'simple'
+  }

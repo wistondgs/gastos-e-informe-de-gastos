@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="icono_gastos" type="mipmap">@drawable/icono_gastos</item>
+</resources>

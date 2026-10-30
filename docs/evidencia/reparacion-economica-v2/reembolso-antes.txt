@@ -1,0 +1,29 @@
+✔ un crédito sin pagos tiene deuda pendiente y no es una gestión sin movimientos (70.308885ms)
+✔ informe por empresa sin compras reconoce su custodia sin revelar otra empresa (92.161126ms)
+✖ un reembolso sin gestión liquida solo la obligación de la misma parte y moneda (20.966781ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 2
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 530.402661
+
+✖ failing tests:
+
+test at tests/economia-integridad.test.js:71:1
+✖ un reembolso sin gestión liquida solo la obligación de la misma parte y moneda (20.966781ms)
+  ErrorApi: La gestión no existe.
+      at validacion (file:///home/wis/dev/gastos-e-informe-de-gastos/src/api/errores.js:28:3)
+      at filasAplicacion (file:///home/wis/dev/gastos-e-informe-de-gastos/src/api/index.js:1292:21)
+      at async recibir (file:///home/wis/dev/gastos-e-informe-de-gastos/src/api/index.js:1003:23)
+      at async file:///home/wis/dev/gastos-e-informe-de-gastos/src/datos/base.js:113:29
+      at async Object.exclusiva (file:///home/wis/dev/gastos-e-informe-de-gastos/src/datos/base.js:98:31)
+      at async r.<computed> [as recibir] (file:///home/wis/dev/gastos-e-informe-de-gastos/src/api/index.js:1366:15)
+      at async TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/economia-integridad.test.js:80:17)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    codigo: 'VALIDACION',
+    campo: 'gestion_id'
+  }

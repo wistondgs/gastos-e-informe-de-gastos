@@ -132,16 +132,27 @@ Las compras de versiones anteriores quedan `sin_detalle`: no generan deudas ni r
 
 Con una compra repartida entre varias partes, el pago `propio` o `fondo` debe decir `asignacion_id`. Los pagos nunca superan el importe de la compra. `anular(id, motivo)`.
 
+## Regularizaciones (`api.regularizaciones`)
+
+`atribuir({id?, pago_id, responsable_id, beneficiario_id, fecha, motivo})` atribuye expresamente la responsabilidad y el beneficiario de un pago de fondos aplicado a gasto personal. Cada pago admite una atribución; no se inventa una persona para registros históricos. `liquidar({id?, pago_id, pagador_id, modalidad, fecha, importe, motivo})` registra un reintegro en centavos, con modalidad `reposicion` (aumenta la custodia) o `directa` (no la modifica). El propietario y la moneda se obtienen del pago original. Se permiten pagos parciales hasta el importe de ese pago; el reintento idéntico es idempotente. `listar()` devuelve atribuciones y movimientos; `anular(id, motivo)` revierte el efecto si el conjunto sigue siendo válido. La operación original no puede anularse mientras tenga liquidaciones activas.
+
+La migración SQLite 7→8 añade atribuciones y movimientos, sin saldos persistidos paralelos. Las aplicaciones anteriores no pueden abrir una base migrada a esquema 8. Las revisiones PDF anteriores conservan sus copias privadas; las nuevas usan el motor 10.
+
+El Excel de una revisión anterior al motor 9 por destinatario que incluya compras compartidas se rechaza: esa revisión podía divulgar importes de otras partes. Debe emitirse una nueva revisión para obtener Excel con el alcance protegido. La copia PDF histórica permanece intacta y debe revisarse antes de compartirla.
+
 ## Dinero recibido y fondos (`api.fondos`)
 
 | Operación                                                                         | Recibe                                                                                                                                    | Devuelve                                                                                     |
 | --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
 | `recibir({ id?, fecha, parte_id, importe, moneda, referencia?, aplicaciones })`   | `aplicaciones`: `[{ gestion_id, destino, importe }]`; `destino`: `"anticipo"` (queda en custodia) o `"reembolso"` (cancela lo adelantado) | `{ recepcion, aplicaciones, creada }`. **Una sola entrada** repartida entre varias gestiones |
+
 | `aplicar(recepcion_id, aplicaciones)`                                             | Aplica lo que quedó sin aplicar                                                                                                           | `{ aplicaciones }`                                                                           |
 | `devolver({ gestion_id, parte_id, fecha, importe, moneda })`                      | Devuelve fondos en custodia a su dueño                                                                                                    | `{ movimiento, creado }`                                                                     |
 | `trasladar({ gestion_id, gestion_destino_id, parte_id, fecha, importe, moneda })` | Pasa fondos en custodia a otra gestión                                                                                                    | `{ movimiento, creado }`                                                                     |
 | `anular(tipo, id, motivo)`                                                        | `tipo`: `"recepcion"`, `"aplicacion"` o `"movimiento"`                                                                                    | `{ anulado }`. No se anula dinero ya gastado: primero se anulan esos pagos                   |
 | `recepciones()`                                                                   |                                                                                                                                           | Cada una con sus `aplicaciones` y `sin_aplicar`                                              |
+
+Una aplicación con `gestion_id: null` se admite únicamente con destino `reembolso`: cancela el saldo de compras sin gestión de la misma parte y moneda. No admite reembolso mayor al saldo ni anticipo sin gestión. La migración SQLite 6→7 conserva las aplicaciones anteriores; las versiones anteriores de la aplicación no pueden abrir una base ya migrada a 7.
 
 Nada puede dejar la custodia en negativo ni reembolsar más de lo adelantado (`VALIDACION`).
 
@@ -199,7 +210,7 @@ Cada saldo: `{ tipo, gestion_id, parte_id, moneda, importe }` (más `compra_id` 
 
 | Operación                                         | Devuelve                                                                                                                                                            |
 | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `previsualizar({ alcance, opciones })`            | `{ codigo, revision, totales, filas, anexos, bytes }`, **sin registrar nada**                                                                                       |
+| `previsualizar({ alcance, opciones })`            | `{ codigo, revision, totales, filas, anexos, financiero, financieroLimitado, bytes }`, **sin registrar nada**. El resumen proviene del mismo modelo que el PDF; puede ser `null` cuando el alcance no permite atribuir saldos. |
 | `emitir({ alcance, opciones, exportar? = true })` | `{ informe, bytes }`. Revisión nueva e inmutable (`GR-…-R01`, `R02`…), con copia privada verificada y, si `exportar`, copia en Documentos/«Registros de mis gastos» |
 | `listar({ clave?, gestion_id? })`                 | Revisiones con `privado_estado` y `compartido_estado` (`verificado`, `alterado` o `ausente`), sin el modelo completo                                                |
 | `abrir(id)`                                       | `{ bytes, origen, nombre }`. `origen`: `privado`, `compartido` o `regenerado` (idéntico, verificado con la huella)                                                  |
@@ -227,3 +238,17 @@ Un respaldo anterior que omitió una copia privada esperada no se considera comp
 - **Pantallas** de: partes, detalle de gestión con sus saldos, el pago al registrar una compra (contado/crédito, origen del dinero, reparto), recepción de dinero y su reparto, devoluciones y traslados, anulaciones con motivo, informes de todos los tipos y la pantalla de recorte.
 - **El botón atrás de Android:** hoy cierra la app desde cualquier pantalla. `@capacitor/app` ya está instalado, con su manejo del botón desactivado (`capacitor.config.json`).
 - **Las pantallas actuales** (Inicio, Gestiones, Registro, Compras, Respaldo) siguen funcionando y usan la API para informes y respaldo. El registro de compras actual guarda `forma_pago: "sin_detalle"`.
+
+### Conciliación de informes · antecedentes del motor 4
+
+En los informes completos de una o varias gestiones, el modelo inmutable contiene `financiero.cuentas`: importes en centavos por gestión, parte y moneda, derivados de los mismos movimientos y corte que los saldos. `recibido` significa anticipo aplicado a la gestión, no total global del depósito; `usado_fondo`, `aportado_propio`, `reembolsado`, devoluciones, traslados y saldos son campos separados. PDF y Excel consumen ese mismo modelo. Las selecciones parciales, períodos y pendientes no presentan saldos generales como si pertenecieran a las compras seleccionadas: `financieroLimitado` expresa esa limitación. El modelo incluye movimientos vigentes para gestiones completas, con fecha desconocida cuando falta el dato; no incluye aún todo el historial de anulaciones/correcciones ni saldos de apertura para períodos. `destinatario_id` selecciona una parte existente y fija su nombre en la revisión emitida.
+
+La emisión guarda el instante UTC y la representación local de ese instante; las revisiones anteriores mantienen sus copias privadas y su huella. El esquema SQLite 6 incorpora `finalidad` y `beneficiario_id` opcionales en recepciones; se conservan los valores vacíos de registros y respaldos anteriores y la identidad de sus reintentos. El cálculo histórico no puede recuperar fechas o relaciones que no hayan sido registradas; consulte las limitaciones de la matriz y no complete valores por inferencia.
+
+### Continuación fase 08: fuente de fondos y motor 5
+
+El motor PDF 5 conserva en el modelo de revisión las recepciones globales vinculadas a las gestiones, su total y remanente sin aplicar; las filas de conciliación siguen reflejando únicamente lo aplicado a cada gestión. El total global se etiqueta y no se suma de nuevo por gestión. Las revisiones de motores anteriores se abren desde sus copias privadas verificadas; no se regeneran con el motor nuevo. Los cortes antiguos con información temporal insuficiente siguen siendo limitados y se advierte explícitamente.
+
+El asistente de compra admite reparto de una compra pagada entre varios destinos, con origen y dueño del fondo o pagador identificados por cada parte. Para una compra sencilla también exige elegir el propietario del fondo o pagador directo; estas respuestas se traducen a la API transaccional existente. Los repartos a crédito o pagos parciales que el asistente no exprese siguen disponibles en el recorrido avanzado.
+
+Los informes nuevos admiten `opciones.logotipo` opcional: imagen PNG o JPEG como data URL de hasta 1 MB. El modelo de la revisión conserva la imagen elegida, de modo que el PDF histórico y su regeneración no dependen de una imagen que después se cambie. En el asistente se elige para cada informe; todavía no existe una asociación persistente de logotipos por empresa.

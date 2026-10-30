@@ -147,6 +147,14 @@ function validarTablas(t) {
   }
   validarAjustes(Object.fromEntries(t.ajustes.map((a) => [a.clave, a.valor])));
   t.partes.forEach(validarParte);
+  const partesIds = new Set(t.partes.map((p) => p.id));
+  for (const r of t.recepciones)
+    if (
+      typeof r.finalidad !== "string" ||
+      r.finalidad.length > 500 ||
+      (r.beneficiario_id !== null && !partesIds.has(r.beneficiario_id))
+    )
+      throw new Error("Contexto de recepción inválido en el respaldo.");
   t.catalogos.forEach(validarCatalogo);
   t.gestiones.forEach(validarGestion);
   t.compras.forEach(validarCompra);

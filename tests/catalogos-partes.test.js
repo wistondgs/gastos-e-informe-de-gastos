@@ -47,13 +47,13 @@ test("migración 4 a 5 conserva los registros previos y crea catálogos vacíos"
   await e.api.compras.registrar(compra({ id: "previa", factura: "00001" }));
   const antigua = new SQL.Database(e.persistido());
   antigua.run(
-    "DROP TABLE catalogo_usos; DROP TABLE catalogos; PRAGMA user_version = 4;",
+    "DROP TABLE regularizaciones; DROP TABLE atribuciones_regularizacion; DROP TABLE catalogo_usos; DROP TABLE catalogos; ALTER TABLE recepciones DROP COLUMN beneficiario_id; ALTER TABLE recepciones DROP COLUMN finalidad; PRAGMA user_version = 4;",
   );
   const db = adaptarSqlJs(SQL, antigua.export(), () => {});
   await inicializar(db);
   assert.equal(
     (await db.query("PRAGMA user_version")).values[0].user_version,
-    5,
+    8,
   );
   const repo = repositorio(db);
   assert.equal((await repo.una("compras", "previa")).factura, "00001");

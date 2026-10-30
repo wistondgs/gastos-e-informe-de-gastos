@@ -74,6 +74,7 @@ export function prepararInforme(contexto, opciones) {
     descripcion,
     items,
     financiero = null,
+    financieroLimitado = false,
     observaciones = [],
   } = contexto || {};
   if (!alcance || !TIPOS_INFORME[alcance.tipo] || !Array.isArray(items))
@@ -155,6 +156,7 @@ export function prepararInforme(contexto, opciones) {
       compartida: !!it.compartida,
       gestion: it.gestion || null,
       asignaciones: it.asignaciones || [],
+      pagosResumen: it.pagosResumen || null,
       cantidadFotos: fotos.length,
       anexos: propios,
       soporte: soporte(
@@ -177,6 +179,7 @@ export function prepararInforme(contexto, opciones) {
     anexos,
     monedas: Object.keys(totales).filter((m) => totales[m].cantidad > 0),
     financiero,
+    financieroLimitado,
     observaciones,
   };
 }

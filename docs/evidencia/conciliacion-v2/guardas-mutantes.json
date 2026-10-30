@@ -1,0 +1,37 @@
+{
+ "no_vacio": {
+  "consultada": 2,
+  "salto": 1,
+  "ultimo_salto": "2026-10-28T18:37:17"
+ },
+ "matar_por_pid": {
+  "consultada": 1,
+  "salto": 1,
+  "ultimo_salto": "2026-10-28T18:37:17"
+ },
+ "campo_de": {
+  "consultada": 2,
+  "salto": 1,
+  "ultimo_salto": "2026-10-28T18:37:17"
+ },
+ "prueba": {
+  "consultada": 2,
+  "salto": 1,
+  "ultimo_salto": "2026-10-28T18:37:17"
+ },
+ "salida_a_fichero": {
+  "consultada": 2,
+  "salto": 1,
+  "ultimo_salto": "2026-10-28T18:37:17"
+ },
+ "salida_a_fichero[constructiva]": {
+  "consultada": 1,
+  "salto": 0,
+  "ultimo_salto": null
+ },
+ "sin_azar_usado": {
+  "consultada": 2,
+  "salto": 1,
+  "ultimo_salto": "2026-10-28T18:37:17"
+ }
+}

@@ -1,0 +1,28 @@
+✖ vista previa entrega los mismos saldos del informe sin emitir revisión (212.888909ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 665.608923
+
+✖ failing tests:
+
+test at tests/caja-guiada.test.js:119:1
+✖ vista previa entrega los mismos saldos del informe sin emitir revisión (212.888909ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /Fondos: C\$ 800\.00/. Input:
+  
+  'INFORME DE GASTOS POR GESTIÓN Prueba GR-G1-R01 Revisión 1 Gestión Juan Managua Apertura y cierre 20/10/2026 \x97 abierta Responsable Juan Pérez Destinatario No indicado Identificador GR-G1-R01 · revisión 1 Corte del informe 27/10/2026 Emitido 27 oct 2026, 12:00 p. m. TOTAL CÓRDOBAS C$ 1,000.00 1 compra Liquidación del dinero al corte: Juan Managua, pendiente. El cierre de una gestión no equivale a su liquidación, y emitir este informe no equivale a aprobación ni a pago. Córdobas y dólares se totalizan por separado, sin conversión. DETALLE DE COMPRAS N.° Fecha Proveedor Documento Concepto Importe Soporte 1 21/10/2026 Proveedor de prueba 0001230 Compra de prueba C$ 1,000.00 Ausente: falta la imagen Total córdobas (1) C$ 1,000.00 RECEPCIONES GLOBALES VINCULADAS Cada recepción se muestra una sola vez. Su total global puede incluir dinero aplicado a otras gestiones; no se suma al total aplicado a esta gestión. 21/10/2026 · Agrícola de prueba · recibido C$ 800.00 · sin aplicar C$ 0.00 En registros antiguos, la fecha de algunas aplicaciones puede no estar disponible; consultá una revisión emitida en la fecha para verificar cortes históricos. ORIGEN Y APLICACIÓN DEL DINERO POR GESTIÓN Juan Managua · Agrícola de prueba · NIO Fondos aplicados C$ 800.00 Pagado con fondos C$ 800.00 Aporte propio C$ 200.00 Por reembolsar C$ 200.00 En custodia C$ 0.00 Fondos aplicados son importes asignados a esta gestión; no representan necesariamente el depósito global completo. ESTADO FINANCIERO AL CORTE Por reembolsar al responsable, a cargo de Agrícola de prueba Juan Managua C$ 200.00 Los saldos se calculan a partir de los anticipos, pagos, reembolsos, devoluciones y traslados registrados hasta el corte. Nunca se compensan entre sí. MOVIMIENTOS VIGENTES AL CORTE Fecha no registrada · Aplicación · Juan Managua · Agrícola de prueba · C$ 800.00 21/10/2026 · Pago con fondo · Juan Managua · Agrícola de prueba · C$ 800.00 · Ref. 0001230 · Compra de prueba 21/10/2026 · Pago propio · Juan Managua · Responsable · C$ 200.00 · Ref. 0001230 · Compra de prueba Las anulaciones y correcciones se reflejan en los saldos al corte; para su historial completo consultá la gestión. GR-G1-R01 · Revisión 1 · Corte 27/10/2026 Página 1 de 2 RELACIÓN DE COMPROBANTES Ausentes: 1 Compra 1 · Proveedor de prueba · Ausente: falta la imagen GR-G1-R01 · Revisión 1 · Corte 27/10/2026 Página 2 de 2'
+  
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/caja-guiada.test.js:163:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'INFORME DE GASTOS POR GESTIÓN Prueba GR-G1-R01 Revisión 1 Gestión Juan Managua Apertura y cierre 20/10/2026 \x97 abierta Responsable Juan Pérez Destinatario No indicado Identificador GR-G1-R01 · revisión 1 Corte del informe 27/10/2026 Emitido 27 oct 2026, 12:00 p. m. TOTAL CÓRDOBAS C$ 1,000.00 1 compra Liquidación del dinero al corte: Juan Managua, pendiente. El cierre de una gestión no equivale a su liquidación, y emitir este informe no equivale a aprobación ni a pago. Córdobas y dólares se totalizan por separado, sin conversión. DETALLE DE COMPRAS N.° Fecha Proveedor Documento Concepto Importe Soporte 1 21/10/2026 Proveedor de prueba 0001230 Compra de prueba C$ 1,000.00 Ausente: falta la imagen Total córdobas (1) C$ 1,000.00 RECEPCIONES GLOBALES VINCULADAS Cada recepción se muestra una sola vez. Su total global puede incluir dinero aplicado a otras gestiones; no se suma al total aplicado a esta gestión. 21/10/2026 · Agrícola de prueba · recibido C$ 800.00 · sin aplicar C$ 0.00 En registros antiguos, la fecha de algunas aplicaciones puede no estar disponible; consultá una revisión emitida en la fecha para verificar cortes históricos. ORIGEN Y APLICACIÓN DEL DINERO POR GESTIÓN Juan Managua · Agrícola de prueba · NIO Fondos aplicados C$ 800.00 Pagado con fondos C$ 800.00 Aporte propio C$ 200.00 Por reembolsar C$ 200.00 En custodia C$ 0.00 Fondos aplicados son importes asignados a esta gestión; no representan necesariamente el depósito global completo. ESTADO FINANCIERO AL CORTE Por reembolsar al responsable, a cargo de Agrícola de prueba Juan Managua C$ 200.00 Los saldos se calculan a partir de los anticipos, pagos, reembolsos, devoluciones y traslados registrados hasta el corte. Nunca se compensan entre sí. MOVIMIENTOS VIGENTES AL CORTE Fecha no registrada · Aplicación · Juan Managua · Agrícola de prueba · C$ 800.00 21/10/2026 · Pago con fondo · Juan Managua · Agrícola de prueba · C$ 800.00 · Ref. 0001230 · Compra de prueba 21/10/2026 · Pago propio · Juan Managua · Responsable · C$ 200.00 · Ref. 0001230 · Compra de prueba Las anulaciones y correcciones se reflejan en los saldos al corte; para su historial completo consultá la gestión. GR-G1-R01 · Revisión 1 · Corte 27/10/2026 Página 1 de 2 RELACIÓN DE COMPROBANTES Ausentes: 1 Compra 1 · Proveedor de prueba · Ausente: falta la imagen GR-G1-R01 · Revisión 1 · Corte 27/10/2026 Página 2 de 2',
+    expected: /Fondos: C\$ 800\.00/,
+    operator: 'match',
+    diff: 'simple'
+  }

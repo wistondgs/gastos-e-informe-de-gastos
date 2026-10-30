@@ -59,9 +59,9 @@ export async function entorno({ snapshot = null, reloj } = {}) {
 }
 /** Personas, empresas y una gestión abierta para los escenarios. */
 export async function basico(api) {
-  const { parte: winston } = await api.partes.crear({
-    id: "winston",
-    nombre: "Winston Gutiérrez",
+  const { parte: juan } = await api.partes.crear({
+    id: "juan",
+    nombre: "Juan Pérez",
     tipo: "persona",
   });
   const { parte: empresa } = await api.partes.crear({
@@ -76,11 +76,11 @@ export async function basico(api) {
   });
   const { gestion } = await api.gestiones.crear({
     id: "g1",
-    nombre: "Winston Managua",
-    responsable_id: "winston",
+    nombre: "Juan Managua",
+    responsable_id: "juan",
     fecha_inicio: "2026-10-20",
   });
-  return { winston, empresa, otra, gestion };
+  return { juan, empresa, otra, gestion };
 }
 let n = 0;
 export const compra = (extra = {}) => ({

@@ -1,9 +1,13 @@
+// Todas las instancias que usan la misma base comparten el orden de operaciones.
+const colas = new WeakMap();
 /** Borradores locales separados de la base financiera; admite fotos como bytes. */
 export function crearBorradores(
   idb = globalThis.indexedDB,
   nombre = "gastos-borradores",
 ) {
-  let turno = Promise.resolve();
+  if (!colas.has(idb)) colas.set(idb, new Map());
+  const porNombre = colas.get(idb);
+  if (!porNombre.has(nombre)) porNombre.set(nombre, Promise.resolve());
   const abrir = () =>
     new Promise((resolve, reject) => {
       const solicitud = idb.open(nombre, 1);
@@ -13,7 +17,7 @@ export function crearBorradores(
       solicitud.onerror = () => reject(solicitud.error);
     });
   const ejecutar = (modo, accion) => {
-    const siguiente = turno.then(async () => {
+    const siguiente = porNombre.get(nombre).then(async () => {
       const db = await abrir();
       try {
         return await new Promise((resolve, reject) => {
@@ -32,7 +36,10 @@ export function crearBorradores(
         db.close();
       }
     });
-    turno = siguiente.catch(() => {});
+    porNombre.set(
+      nombre,
+      siguiente.catch(() => {}),
+    );
     return siguiente;
   };
   return {

@@ -1,0 +1,48 @@
+✖ un crédito sin pagos tiene deuda pendiente y no es una gestión sin movimientos (75.729518ms)
+✖ informe por empresa sin compras reconoce su custodia sin revelar otra empresa (105.843458ms)
+ℹ tests 2
+ℹ suites 0
+ℹ pass 0
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 589.323794
+
+✖ failing tests:
+
+test at tests/economia-integridad.test.js:7:1
+✖ un crédito sin pagos tiene deuda pendiente y no es una gestión sin movimientos (75.729518ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  + actual - expected
+  
+  + 'sin_movimientos'
+  - 'pendiente'
+  
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/economia-integridad.test.js:16:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'sin_movimientos',
+    expected: 'pendiente',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at tests/economia-integridad.test.js:25:1
+✖ informe por empresa sin compras reconoce su custodia sin revelar otra empresa (105.843458ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /100\.00/. Input:
+  
+  'INFORME DE GASTOS POR EMPRESA O PERSONA Prueba GP-23F5175F-R01 Revisión 1 Empresa o persona Agrícola de prueba Gestiones Todas Responsable No indicado Destinatario No indicado Identificador GP-23F5175F-R01 · revisión 1 Corte del informe 27/10/2026 Emitido 27 oct 2026, 12:00 p. m. ASIGNADO CÓRDOBAS C$ 0.00 0 compras Liquidación del dinero: sin movimientos de dinero registrados. El cierre de una gestión no equivale a su liquidación, y emitir este informe no equivale a aprobación ni a pago. Córdobas y dólares se totalizan por separado, sin conversión. Los importes son la parte asignada a este destinatario; los registros de otros destinos y los personales no se incluyen. DETALLE DE COMPRAS No hay compras incluidas en este informe. RELACIÓN DE COMPROBANTES Sin compras. GP-23F5175F-R01 · Revisión 1 · Corte 27/10/2026 Página 1 de 1'
+  
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/economia-integridad.test.js:32:10)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 'INFORME DE GASTOS POR EMPRESA O PERSONA Prueba GP-23F5175F-R01 Revisión 1 Empresa o persona Agrícola de prueba Gestiones Todas Responsable No indicado Destinatario No indicado Identificador GP-23F5175F-R01 · revisión 1 Corte del informe 27/10/2026 Emitido 27 oct 2026, 12:00 p. m. ASIGNADO CÓRDOBAS C$ 0.00 0 compras Liquidación del dinero: sin movimientos de dinero registrados. El cierre de una gestión no equivale a su liquidación, y emitir este informe no equivale a aprobación ni a pago. Córdobas y dólares se totalizan por separado, sin conversión. Los importes son la parte asignada a este destinatario; los registros de otros destinos y los personales no se incluyen. DETALLE DE COMPRAS No hay compras incluidas en este informe. RELACIÓN DE COMPROBANTES Sin compras. GP-23F5175F-R01 · Revisión 1 · Corte 27/10/2026 Página 1 de 1',
+    expected: /100\.00/,
+    operator: 'match',
+    diff: 'simple'
+  }

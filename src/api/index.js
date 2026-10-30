@@ -1,5 +1,5 @@
 /**
- * API local de Gastos y Rendiciones: la única puerta entre la interfaz y los
+ * API local de Gastos e Informe de Gastos: la única puerta entre la interfaz y los
  * datos. Cada operación recibe y devuelve objetos simples (serializables a
  * JSON), funciona sin conexión y, si falla, lanza un ErrorApi. Contrato:
  * docs/CONTRATOS_API.md.
@@ -369,10 +369,18 @@ export function crearApi({
         const historial = [
           ...aplicacionesGestion.map((a) => {
             const r = datos.recepciones.find((x) => x.id === a.recepcion_id);
+            const aplicada = datos.eventos.find(
+              (e) =>
+                e.entidad === "aplicacion" &&
+                e.entidad_id === a.id &&
+                e.tipo === "aplicar",
+            );
             return {
               ...a,
               tipo: a.destino,
-              fecha: r?.fecha,
+              fecha: aplicada ? aplicada.fecha.slice(0, 10) : r?.fecha,
+              fecha_registro: aplicada?.fecha || r?.fecha_registro,
+              fecha_aplicacion_conocida: !!aplicada,
               moneda: r?.moneda,
               parte_id: r?.parte_id,
               referencia: r?.referencia,
@@ -396,7 +404,14 @@ export function crearApi({
           ),
         ].sort(
           (a, b) =>
-            String(a.fecha).localeCompare(String(b.fecha)) ||
+            String(a.fecha || "")
+              .slice(0, 10)
+              .localeCompare(String(b.fecha || "").slice(0, 10)) ||
+            String(
+              a.fecha_registro || (a.entidad ? a.fecha : ""),
+            ).localeCompare(
+              String(b.fecha_registro || (b.entidad ? b.fecha : "")),
+            ) ||
             String(a.id).localeCompare(String(b.id)),
         );
         return {
@@ -942,6 +957,163 @@ export function crearApi({
       },
     },
 
+    regularizaciones: {
+      async atribuir({
+        id = uuid(),
+        pago_id,
+        responsable_id,
+        beneficiario_id,
+        fecha,
+        motivo,
+      }) {
+        validarMovimientoBasico("aplicacion", { id, importe: 1 });
+        await exigirParte(responsable_id);
+        await exigirParte(beneficiario_id);
+        const p = await exigir("pagos", pago_id, "el pago");
+        const c = await exigir("compras", p.compra_id, "la compra");
+        const propias = (await repo.todas("asignaciones")).filter(
+          (a) => a.compra_id === c.id && !a.anulada,
+        );
+        const a = p.asignacion_id
+          ? propias.find((x) => x.id === p.asignacion_id)
+          : propias.length === 1
+            ? propias[0]
+            : null;
+        if (
+          p.anulada ||
+          c.anulada ||
+          p.origen !== "fondo" ||
+          !a ||
+          a.parte_id !== null
+        )
+          throw validacion(
+            "El pago no origina una obligación personal.",
+            "pago_id",
+          );
+        if (!fechaValida(fecha) || fecha < p.fecha)
+          throw validacion("Fecha de atribución inválida.", "fecha");
+        const m = MOTIVO(motivo);
+        const fila = {
+          id,
+          pago_id,
+          responsable_id,
+          beneficiario_id,
+          fecha,
+          motivo: m,
+        };
+        const firma = await identidad(fila);
+        const previa = await repo.una("atribuciones_regularizacion", id);
+        if (previa) {
+          await verificarReintento("atribucion_regularizacion", id, firma);
+          return { atribucion: previa, creada: false };
+        }
+        if (
+          (await repo.todas("atribuciones_regularizacion")).some(
+            (x) => x.pago_id === pago_id,
+          )
+        )
+          throw estado("El pago ya tiene una atribución.");
+        await confirmar({
+          altas: [
+            { tabla: "atribuciones_regularizacion", fila },
+            eventoIdentidad("atribucion_regularizacion", id, firma),
+            evento("atribucion_regularizacion", id, "atribuir", m, {
+              pago_id,
+              responsable_id,
+              beneficiario_id,
+            }),
+          ],
+        });
+        return { atribucion: fila, creada: true };
+      },
+      async liquidar({
+        id = uuid(),
+        pago_id,
+        pagador_id,
+        modalidad,
+        fecha,
+        importe,
+        motivo,
+      }) {
+        await exigirParte(pagador_id);
+        const atribucion = (
+          await repo.todas("atribuciones_regularizacion")
+        ).find((a) => a.pago_id === pago_id);
+        if (!atribucion)
+          throw validacion(
+            "Atribuí explícitamente el responsable antes de liquidar.",
+            "pago_id",
+          );
+        if (!fechaValida(fecha) || fecha < atribucion.fecha)
+          throw validacion("Fecha de liquidación inválida.", "fecha");
+        if (!["reposicion", "directa"].includes(modalidad))
+          throw validacion("Elegí la modalidad.", "modalidad");
+        const m = MOTIVO(motivo);
+        validarMovimientoBasico("pago", { id, fecha, importe });
+        const firma = await identidad({
+          id,
+          pago_id,
+          pagador_id,
+          modalidad,
+          fecha,
+          importe,
+          motivo: m,
+        });
+        const previa = await repo.una("regularizaciones", id);
+        if (previa) {
+          await verificarReintento("regularizacion", id, firma);
+          return { regularizacion: previa, creada: false };
+        }
+        const fila = {
+          id,
+          pago_id,
+          atribucion_id: atribucion.id,
+          pagador_id,
+          modalidad,
+          fecha,
+          fecha_registro: ahora(),
+          importe,
+          motivo: m,
+          anulada: null,
+        };
+        await confirmar({
+          altas: [
+            { tabla: "regularizaciones", fila },
+            eventoIdentidad("regularizacion", id, firma),
+            evento("regularizacion", id, "liquidar", m, {
+              pago_id,
+              pagador_id,
+              modalidad,
+              importe,
+            }),
+          ],
+        });
+        return { regularizacion: fila, creada: true };
+      },
+      async listar() {
+        return {
+          atribuciones: await repo.todas("atribuciones_regularizacion"),
+          regularizaciones: await repo.todas("regularizaciones"),
+        };
+      },
+      async anular(id, motivo) {
+        const fila = await exigir("regularizaciones", id, "la regularización");
+        if (fila.anulada) throw estado("La regularización ya está anulada.");
+        const m = MOTIVO(motivo),
+          fecha = ahora();
+        await confirmar({
+          cambios: [
+            { tabla: "regularizaciones", id, campos: { anulada: fecha } },
+          ],
+          altas: [
+            evento("regularizacion", id, "anular", m, {
+              pago_id: fila.pago_id,
+            }),
+          ],
+        });
+        return { regularizacion: { ...fila, anulada: fecha } };
+      },
+    },
     fondos: {
       /**
        * Registra dinero recibido de una parte, una sola vez, y su reparto entre
@@ -954,9 +1126,17 @@ export function crearApi({
         importe,
         moneda,
         referencia = "",
+        finalidad = "",
+        beneficiario_id = null,
         aplicaciones = [],
       }) {
         await exigirParte(parte_id);
+        await parteOpcional(beneficiario_id, "beneficiario_id");
+        if (typeof finalidad !== "string" || finalidad.length > 500)
+          throw validacion(
+            "La finalidad admite hasta 500 caracteres.",
+            "finalidad",
+          );
         if (typeof referencia !== "string" || referencia.length > 120)
           throw validacion(
             "La referencia admite hasta 120 caracteres.",
@@ -970,10 +1150,19 @@ export function crearApi({
           importe,
           moneda,
           referencia,
+          finalidad,
+          beneficiario_id,
           anulada: null,
         });
+        const {
+          finalidad: finalidadFirma,
+          beneficiario_id: beneficiarioFirma,
+          ...firmaBase
+        } = r;
         const firma = await identidad({
-          ...r,
+          ...firmaBase,
+          ...(finalidadFirma ? { finalidad: finalidadFirma } : {}),
+          ...(beneficiarioFirma ? { beneficiario_id: beneficiarioFirma } : {}),
           fecha_registro: null,
           anulada: null,
           aplicaciones,
@@ -1271,15 +1460,18 @@ export function crearApi({
   async function filasAplicacion(recepcion_id, aplicaciones) {
     const filas = [];
     for (const a of aplicaciones) {
-      const g = await repo.una("gestiones", a.gestion_id);
-      if (!g) throw validacion("La gestión no existe.", "gestion_id");
       if (!["anticipo", "reembolso"].includes(a.destino))
         throw validacion("Elegí anticipo o reembolso.", "destino");
+      if (a.gestion_id == null) {
+        if (a.destino !== "reembolso")
+          throw validacion("El anticipo necesita una gestión.", "gestion_id");
+      } else if (!(await repo.una("gestiones", a.gestion_id)))
+        throw validacion("La gestión no existe.", "gestion_id");
       filas.push(
         validarMovimientoBasico("aplicacion", {
           id: a.id || uuid(),
           recepcion_id,
-          gestion_id: a.gestion_id,
+          gestion_id: a.gestion_id ?? null,
           destino: a.destino,
           importe: a.importe,
           anulada: null,
@@ -1344,6 +1536,9 @@ function envolverTodo(objeto, repo, ruta = "") {
             "fondos.devolver",
             "fondos.trasladar",
             "fondos.anular",
+            "regularizaciones.atribuir",
+            "regularizaciones.liquidar",
+            "regularizaciones.anular",
           ];
           return financieras.includes(nombre)
             ? await repo.transaccion(() => v(...args))

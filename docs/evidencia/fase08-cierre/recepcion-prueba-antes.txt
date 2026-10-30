@@ -1,0 +1,18 @@
+✖ informe distingue una recepción global de sus aplicaciones y remanente (169.475623ms)
+ℹ tests 1
+ℹ suites 0
+ℹ pass 0
+ℹ fail 1
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 534.371208
+
+✖ failing tests:
+
+test at tests/conciliacion-v2.test.js:293:1
+✖ informe distingue una recepción global de sus aplicaciones y remanente (169.475623ms)
+  TypeError: Cannot read properties of undefined (reading 'length')
+      at TestContext.<anonymous> (file:///home/wis/dev/gastos-e-informe-de-gastos/tests/conciliacion-v2.test.js:318:46)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3)

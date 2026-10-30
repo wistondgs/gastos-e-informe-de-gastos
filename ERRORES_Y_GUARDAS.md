@@ -185,3 +185,114 @@ Número siguiente, fecha, los campos del formato, y la guarda con su tipo. Si la
 **Firma (cómo se detecta).** Un comando de instalación o compilación destructiva apunta al árbol principal pese a existir una ruta aislada.
 **Guarda** `[PREGUNTA → punto 0]`: antes de ejecutar instalaciones o compilaciones que reemplacen archivos, comprobar el directorio efectivo, el destino y el estado de archivos ignorados afectados; usar un proceso con directorio explícito de la copia aislada.
 **Aplicada en:** `PLANTILLA_FASE.md`, punto 0; el enganche es obligatorio por `AGENTS.md`.
+
+---
+
+## E-15 · El registro pedía una persona cuando faltaba elegir el pago
+**Clase:** instrumento · **Veces que saltó:** 1 · El mensaje de validación apuntaba al campo equivocado.
+**2026-10-28, fluidez V2 (error de Codex).** Al probar en navegador el paso de pago sin seleccionar una opción, la interfaz mostraba «Elegí la persona o empresa relacionada con la compra».
+**Por qué.** El asistente recibió la nueva opción vacía, pero el validador comprobaba primero la persona.
+**Severidad.** Confusión en el recorrido de compra; solo se utilizaron datos sintéticos.
+**Firma (cómo se detecta).** Con tipo de pago vacío, la validación menciona una persona en vez de solicitar el origen del pago.
+**Guarda** `[MECÁNICA]`: `tests/flujo-financiero.test.js` exige que la selección vacía pida elegir cómo se pagó. El comportamiento anterior hace fallar la aserción.
+**Aplicada en:** `prepararCompraFinanciera` y la prueba indicada.
+
+---
+
+## E-16 · Un guardado diferido resucitó el borrador ya descartado
+**Clase:** criterio · **Veces que saltó:** 1 · El importe del registro siguiente salió con dígitos de un registro anterior.
+**2026-10-28, interfaz guiada (error de Claude).** En el recorrido de navegador, al abrir un segundo registro guiado y escribir 1200, la app mostró «C$ 10,001,200.00». El borrador del registro anterior («1000») se había vuelto a escribir: `AsistenteGasto.vue` lo guardaba con 400 ms de espera, y el temporizador seguía pendiente cuando `guardar()` lo descartaba; al vencer, lo escribía de nuevo y el registro siguiente lo recuperaba.
+**Por qué.** Se descartó el borrador sin detener primero su guardado diferido; se supuso que descartar era el último acto sobre el borrador.
+**Severidad.** Un importe equivocado podía guardarse sin que la persona lo notara; solo se usaron datos sintéticos.
+**Firma (cómo se detecta).** Al empezar un registro nuevo aparece «Seguimos donde lo dejaste» con datos de un registro que ya se guardó, o el importe trae dígitos que no se escribieron.
+**Guarda** `[MECÁNICA]`: `crearGuardadoDiferido` (`src/interfaz/guiada/guia.js`) se detiene antes de registrar la compra y solo se reanuda en un registro nuevo; `tests/interfaz-guiada.test.js` exige que un guardado programado antes y después de detener no se escriba. Mutante observado: con `detener()` sin efecto, la prueba falla.
+**Aplicada en:** `src/interfaz/guiada/AsistenteGasto.vue` y `src/interfaz/guiada/guia.js`.
+
+---
+
+## E-17 · El informe duplicó el responsable y mostró «No indicado»
+**Clase:** instrumento · **Veces que saltó:** 1 · La cabecera contradecía el responsable registrado de la gestión.
+**2026-10-29, conciliación V2 (error de Codex).** La revisión visual del PDF sintético mostró «Responsable de Winston Managua: Winston Gutiérrez» y, a la vez, «Responsable: No indicado».
+**Por qué.** Se agregó el responsable de la gestión al contexto sin coordinarlo con el campo de cabecera del informe.
+**Severidad.** Información contradictoria en un informe; el caso usó datos sintéticos.
+**Firma (cómo se detecta).** Existe un responsable registrado y, sin otro nombre explícito, el modelo de la revisión deja el responsable vacío.
+**Guarda** `[MECÁNICA]`: `tests/conciliacion-v2.test.js` exige el nombre del responsable en las opciones y evita el duplicado; el comportamiento anterior deja el nombre vacío y falla.
+**Aplicada en:** `src/api/informes.js` y la prueba indicada.
+
+---
+
+## E-18 · Una empresa recién creada apareció dos veces en el asistente
+**Clase:** instrumento · **Veces que saltó:** 1 · La lista juntó dos copias del mismo identificador.
+**2026-10-29, fase 08 (error de Codex).** En la prueba de depósitos sucesivos, «Empresa Depósitos Sintética» apareció dos veces después de que la API actualizara la lista de partes.
+**Por qué.** El asistente concatenaba las partes recién creadas con las ya recargadas sin comprobar su identificador.
+**Severidad.** Confusión visual; se verificó con una sola identidad sintética, sin duplicar movimientos.
+**Firma (cómo se detecta).** Un mismo identificador aparece más de una vez en las opciones después de guardar o refrescar.
+**Guarda** `[MECÁNICA]`: `partesUnicas` conserva una entrada por identificador sin fusionar personas distintas; `tests/interfaz-guiada.test.js` verifica ambos casos. El comportamiento de concatenación hace fallar la prueba.
+**Aplicada en:** asistentes de recepción y compra, `guia.js` y su prueba.
+
+---
+
+## E-19 · Un depósito nuevo se presentó como si fuera el saldo acumulado
+**Clase:** criterio · **Veces que saltó:** 1 · El mensaje decía «quedan C$100,000» aunque existía otra entrada anterior.
+**2026-10-29, fase 08 (error de Codex).** En la prueba de depósitos sucesivos, el asistente describió el importe de la segunda recepción como dinero restante en la gestión, sin incluir la recepción anterior.
+**Por qué.** El texto de confirmación usaba el importe del movimiento como si fuera el saldo agregado.
+**Severidad.** Información financiera engañosa; el cálculo y los movimientos sintéticos permanecieron correctos.
+**Firma (cómo se detecta).** La confirmación de un anticipo usa «quedan» seguido únicamente del importe de esa recepción.
+**Guarda** `[MECÁNICA]`: `textoAnticipoRecibido` identifica el importe como una asignación y remite al disponible calculado; una prueba rechaza el texto «quedan» con el importe de la entrada.
+**Aplicada en:** `guia.js`, `RecibirGuiado.vue` y `tests/interfaz-guiada.test.js`.
+
+---
+
+## E-20 · El informe ocultó la custodia cuando llegó a cero
+**Clase:** instrumento · **Veces que saltó:** 1 · Los exportadores omitían todos los campos de importe cero.
+**2026-10-29, integración de encargos (error de Codex).** En un caso sintético con C$1,600 recibidos y utilizados, el PDF no mostraba «En custodia»; el Excel tampoco incluía esa fila, aunque la API devolvía cero.
+**Por qué.** Se trató cero como ausencia de información también cuando era el saldo relevante del fondo agotado.
+**Severidad.** Una rendición no indicaba explícitamente que el fondo estaba agotado; no se alteraron movimientos ni datos reales.
+**Firma (cómo se detecta).** Hay anticipo o pagos de fondo y el resumen financiero omite la custodia de cero.
+**Guarda** `[MECÁNICA]`: `tests/integracion-encargos.test.js` exige la etiqueta en el PDF y el valor numérico cero en Excel. El comportamiento anterior hace fallar la prueba.
+**Aplicada en:** exportadores PDF/Excel y prueba de integración. PDF motor 7 para conservar revisiones anteriores.
+
+---
+
+## E-21 · Las recepciones de un informe salieron fuera de orden cronológico
+**Clase:** instrumento · **Veces que saltó:** 1 · El orden dependía del identificador de las aplicaciones.
+**2026-10-29, fase 09 (error de Codex).** Un informe sintético presentó la entrega del 22 de octubre antes de la del 21, pese a mostrar importes correctos.
+**Por qué.** La proyección conservaba el orden de las filas consultadas en vez de ordenar por fecha de recepción.
+**Severidad.** El historial era confuso; no cambió saldos ni datos reales.
+**Firma (cómo se detecta).** Dos fechas de recepción aparecen en el Excel en orden inverso.
+**Guarda** `[MECÁNICA]`: `tests/caja-guiada.test.js` exige fechas e importes de ambas recepciones en orden. La proyección sin ordenamiento falla.
+**Aplicada en:** `src/api/informes.js` y la prueba indicada; los informes ya emitidos mantienen su copia histórica.
+
+---
+
+## E-22 · Un informe por destinatario mostró el importe total de una compra compartida
+**Clase:** criterio · **Veces que saltó:** 1 · La columna del importe total incluía partes ajenas al destinatario.
+**2026-10-29, fase 09 (error de Codex).** Con una compra sintética de C$1,000 repartida en C$600 y C$400, el Excel y el PDF destinados a la primera empresa incluían C$1,000 y C$600.
+**Por qué.** El exportador reutilizó el importe completo de la compra sin considerar el alcance del informe.
+**Severidad.** Divulgación potencial de importes de otras partes; se detectó exclusivamente con datos sintéticos.
+**Firma (cómo se detecta).** En un PDF o Excel por destinatario aparece el importe total de una compra compartida.
+**Guarda** `[MECÁNICA]`: `tests/caja-guiada.test.js` exige que la columna del total esté vacía, que el PDF no exponga el importe total y que ambos conserven lo asignado; el comportamiento anterior falla.
+**Aplicada en:** exportadores PDF y Excel y la prueba indicada; PDF motor 9 preserva revisiones previas.
+La prueba anterior A6 exigía imprimir el total compartido; se actualizó para rechazarlo conforme al alcance de privacidad de la fase 09.
+
+---
+
+## E-23 · El historial del mismo día se ordenó por identificador
+**Clase:** instrumento · **Veces que saltó:** 1 · Las entradas y compras del mismo día se ordenaban por ID.
+**2026-10-29, fase 09 (error de Codex).** En la caja sintética una compra apareció entre dos depósitos que se habían registrado antes de ella.
+**Por qué.** El historial solo comparaba la fecha y después el identificador aleatorio.
+**Severidad.** El orden sugería una secuencia equivocada, aunque los saldos persistidos eran correctos; sin datos reales.
+**Firma (cómo se detecta).** Con entradas y compra el mismo día, identificadores opuestos al orden de registro cambian la secuencia visible.
+**Guarda** `[MECÁNICA]`: `tests/caja-guiada.test.js` verifica el orden de registro de dos entradas seguidas de compra y pago, y la fecha real de una aplicación posterior. El orden anterior falla.
+**Aplicada en:** `api.gestiones.detalle` y la prueba indicada. Las fechas inexistentes no se reconstruyen.
+
+---
+
+## E-24 · La confirmación de pago combinado omitió el importe propio
+**Clase:** instrumento · **Veces que saltó:** 1 · El resumen decía «el resto lo pusiste vos» sin indicar el monto.
+**2026-10-29, fase 09 (error de Codex).** En una compra sintética de C$1,000, con C$800 de fondo, la pantalla de confirmación no mostraba los C$200 propios.
+**Por qué.** El texto resumía una de las fuentes sin usar los importes que ya preparaba la entrada financiera.
+**Severidad.** La persona debía calcular el aporte antes de confirmar; los importes guardados fueron correctos y sintéticos.
+**Firma (cómo se detecta).** Una compra combinada muestra el fondo pero no el importe propio en la confirmación.
+**Guarda** `[MECÁNICA]`: `tests/caja-guiada.test.js` exige ambos importes en el texto preparado desde las fuentes de pago existentes; el comportamiento anterior falla.
+**Aplicada en:** `src/interfaz/guiada/guia.js`, asistente de gasto y prueba indicada.

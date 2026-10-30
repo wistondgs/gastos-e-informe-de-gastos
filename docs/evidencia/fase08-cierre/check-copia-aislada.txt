@@ -1,0 +1,196 @@
+
+> gastos-e-informe-de-gastos@2.0.0-alfa.1 check
+> npm run lint && npm run format:check && npm run test && npm run build
+
+
+> gastos-e-informe-de-gastos@2.0.0-alfa.1 lint
+> eslint src tests vite.config.js
+
+
+> gastos-e-informe-de-gastos@2.0.0-alfa.1 format:check
+> prettier --check src tests vite.config.js index.html
+
+Checking formatting...
+All matched files use Prettier code style!
+
+> gastos-e-informe-de-gastos@2.0.0-alfa.1 test
+> node --test tests/*.test.js
+
+✔ A1 adelanto propio: C$8,000 pagados, C$3,000 reembolsados, quedan C$5,000 por recibir (330.295539ms)
+✔ A2 anticipo: recibir C$100,000, pagar C$96,000 y devolver C$4,000 deja la custodia en cero (152.254582ms)
+✔ A3 origen combinado: C$103,000 con C$100,000 del anticipo y C$3,000 propios (111.830099ms)
+✔ A4 crédito: C$10,000 a crédito y C$4,000 pagados por la empresa dejan C$6,000 de deuda y una sola compra (133.034425ms)
+✔ A5 períodos: una sola entrada de C$7,000 liquida C$5,000 de una gestión cerrada y C$2,000 de otra (155.411051ms)
+✔ A6 compra mixta: C$600 + C$250 + C$150 personal; C$1,001 se rechaza; el informe de A no trae lo de B ni lo personal (285.651338ms)
+✔ A7 respaldo duplicado: factura y voucher de una compra de C$5,500 son un solo gasto (213.460805ms)
+✔ A8 monedas y correcciones: C$100 y US$10 por separado; anular con motivo y reabrir conserva el informe anterior (173.637365ms)
+✔ A9 protección: exportación interrumpida, imagen ausente, restauración fallida y reintentos (145.876411ms)
+✔ Android excluye la copia automática y la transferencia de datos privados (12.275681ms)
+✔ la orientación EXIF se lee y se suma al giro; las espejadas se informan (6.530898ms)
+✔ las dimensiones salen de la cabecera del PNG y del JPEG (1.806905ms)
+✔ un ajuste inválido se rechaza; un recorte inseguro nunca se aplica (1.690566ms)
+✔ el plan junta dos chicos, da página entera al grande y parte el largo en tramos que cubren todo (1.82727ms)
+✔ una foto girada de lado se planifica con su tamaño ya girado (0.865946ms)
+✔ la geometría gira sin deformar y deja la imagen dentro de su caja (1.400053ms)
+✔ la propuesta de recorte quita márgenes uniformes y nunca corta contenido (29.473072ms)
+✔ en el PDF rasterizado, el giro de 90° lleva la marca de la esquina superior izquierda a la superior derecha (616.817872ms)
+✔ partes: crear es idempotente, un id ajeno es conflicto y desactivar no borra (487.39508ms)
+✔ gestiones: varias abiertas a la vez, compras sin gestión visibles, terminar no borra y reabrir pide motivo (184.439731ms)
+✔ reglas de pago: sin detalle no admite pagos, crédito pide deudor, fondos ajenos no pagan gastos de otro (142.519026ms)
+✔ asignaciones, traslados, anulaciones y comprobantes agregados dejan su rastro (159.230459ms)
+✔ informes de varias gestiones, de un período, de pendientes y por destinatario; vista previa y Excel (798.95568ms)
+✔ la API solo entrega ErrorApi, objetos serializables y la identidad del producto fuera de los informes (125.692377ms)
+✔ la pantalla inicial se puede compilar y contiene el aviso del entorno (595.000444ms)
+✔ borrador conserva id y bytes tras reabrir, y se descarta de forma explícita (16.886624ms)
+✔ catálogos de cuentas, medios, categorías y destinos sobreviven al respaldo (444.710298ms)
+✔ migración 4 a 5 conserva los registros previos y crea catálogos vacíos (101.822691ms)
+✔ editar parte conserva id, historial de nombres y roles derivados de operaciones (73.546536ms)
+✔ los catálogos usados en compras conservan el nombre histórico (143.263814ms)
+✔ T3: PDF y Excel exponen fondos aplicados, usados, aporte y custodia con el mismo modelo (1068.590778ms)
+✔ T5: el subconjunto no atribuye saldos de toda la gestión a las compras elegidas (117.033114ms)
+✔ T1 y T2: entradas sucesivas y distribución no duplican anticipos por gestión (93.09828ms)
+✔ T4: las compras en dólares y córdobas no se convierten ni se mezclan (146.089137ms)
+✔ la recepción conserva finalidad y beneficiario por separado y protege el reintento (102.705283ms)
+✔ migrar esquema 5 conserva la recepción y su reintento sin inventar contexto (89.562408ms)
+✔ un respaldo de esquema 5 restaura la recepción sin inventar datos nuevos (120.80433ms)
+✔ destinatario identificado conserva nombre en revisión tras editar persona (70.144055ms)
+✔ informe distingue una recepción global de sus aplicaciones y remanente (156.565001ms)
+✔ el responsable de la gestión no aparece como no indicado (66.700414ms)
+✔ el ejemplo es válido y rechaza versiones y campos no previstos (126.31138ms)
+✔ corregir campos descriptivos conserva el antes y no altera dinero ni pagos (495.762837ms)
+✔ corrección económica conserva el original, sus fotos y traza la sustitución (224.444579ms)
+✔ no corrige económicamente una compra con pagos sin revertirlos (84.949221ms)
+✔ fallo al copiar comprobantes no anula la compra original (91.332548ms)
+✔ ajustes al registrar sobreviven al respaldo y conservan la foto original (523.786197ms)
+✔ el PDF individual aplica la transformación y no altera el original (527.06905ms)
+✔ el estado de cuentas separa recepción, gasto con fondo, aporte, reembolso y crédito (509.336937ms)
+✔ fondos acumulados, compra mixta y crédito conservan sus saldos separados (447.766097ms)
+✔ el pago con fondo no puede exceder lo recibido (71.765177ms)
+✔ reparto mixto con varias partes mantiene cada pago y su asignación (122.120533ms)
+✔ pago directo identifica por separado pagador y beneficiario (70.59442ms)
+✔ una compra sin elección de pago pide seleccionar el origen (1.028213ms)
+✔ una entrada se reparte entre gestiones y permite aplicar después el remanente (288.260114ms)
+✔ crédito de 15000 con dos abonos conserva una compra y deuda de 7000 (70.940651ms)
+✔ migración conserva compras antiguas y gestión permite cierre y respaldo (398.550218ms)
+✔ migración preserva referencias de fotos y revierte si falla una sentencia (40.984465ms)
+✔ respaldo de la versión anterior se restaura sin perder la compra (62.262554ms)
+✔ restaurar respaldo anterior recupera imagen junto con compra (41.922192ms)
+✔ E-06: no copia un APK si ya hay otro en Descargas (50.404366ms)
+✔ E-07: falla si el teléfono no indexó el APK con su tamaño real (76.650275ms)
+✔ con Descargas sin APK y el tamaño indexado, entrega (74.809903ms)
+✔ la procedencia indica si hay cambios locales, incluidos archivos nuevos (74.758616ms)
+✔ el historial de una gestión conserva aplicaciones, compras, pagos y anulaciones (305.06697ms)
+✔ historial no mezcla eventos de entidades distintas con igual identificador (90.492117ms)
+✔ el informe al día 15 incluye compra, reparto y saldo anulados el día 20 (570.673586ms)
+✔ una sustitución económica posterior no aparece antes de su fecha (77.135975ms)
+✔ una corrección descriptiva posterior no reescribe el contenido histórico (72.005748ms)
+✔ un reparto reemplazado después del corte se rechaza si no hay fecha de creación suficiente (47.343629ms)
+✔ una fotografía agregada después del corte no aparece en el informe histórico (82.189474ms)
+✔ una aplicación posterior no mueve custodia en un corte anterior (45.613738ms)
+✔ el informe histórico conserva el ajuste anterior de una fotografía (213.502953ms)
+✔ los totales van por moneda, cuadran con las filas y respetan el corte (160.317897ms)
+✔ los anexos se numeran en el orden de la tabla y la falta de imagen se informa (62.429706ms)
+✔ rechaza compras ajenas, duplicadas, fotos cruzadas y cortes inválidos (23.386276ms)
+✔ el PDF ejecutivo en Carta trae datos, tabla, totales separados y anexos (380.595848ms)
+✔ el modo formal en A4 trae el bloque de revisión y no tiene anexos sin fotos (39.700923ms)
+✔ la tabla larga continúa en otra página con su cabecera (247.630574ms)
+✔ un emoji o un carácter fuera de WinAnsi no rompe el PDF (14.221486ms)
+✔ un comprobante alterado detiene el informe (31.72935ms)
+✔ el Excel de la revisión trae los mismos totales, documento como texto y sin fórmulas (157.877262ms)
+✔ una compra en la fecha de corte entra en el informe (12.36712ms)
+✔ el PDF no depende del reloj: la misma revisión da los mismos bytes otro día (192.49165ms)
+✔ el modelo rechaza una compra anulada aunque se la pasen (5.956518ms)
+✔ el almacén guarda sin pisar, conserva los bytes y se puede volver a abrir (15.242397ms)
+✔ si la verificación falla, el informe no queda presentado como guardado (3.01331ms)
+✔ los nombres no admiten rutas ni extensiones ajenas (0.51946ms)
+✔ en el navegador de prueba, privado y compartido no se mezclan (0.532255ms)
+✔ la migración 1→5 conserva compras, identificadores, ceros, importes y fotos (la base del APK PASO-A) (198.348917ms)
+✔ la migración 3→4 conserva los informes emitidos con su serie de revisiones (79.977222ms)
+✔ si la migración 4 falla, la base queda en la versión 3 sin perder nada (46.816418ms)
+✔ una base de una versión más nueva se rechaza sin tocarla (7.971519ms)
+✔ una revisión de motor anterior se abre desde su copia privada sin modificar sus bytes (273.74484ms)
+✔ cada emisión es una revisión nueva; la entregada se regenera idéntica aunque después cambien los datos (324.447603ms)
+✔ una revisión fallida no deja archivos ni registro; la misma revisión no se registra dos veces (99.368333ms)
+✔ el respaldo v4 conserva todo y la revisión se regenera idéntica en otro dispositivo (286.488522ms)
+✔ los respaldos v2 y v3 siguen restaurando; uno incoherente o más nuevo se rechaza sin tocar nada (46.21671ms)
+✔ C1-01 devoluciones concurrentes no exceden la custodia (252.127741ms)
+✔ C1-02 un cambio de forma de pago con el mismo id es conflicto (68.525205ms)
+✔ C1-03 no se declara completo si falta un PDF privado (225.083065ms)
+✔ C1-02 fechas, contraparte, distribución y comprobante forman parte de la identidad (92.842239ms)
+✔ C1-02 reintentos simultáneos idénticos se registran una vez (57.72583ms)
+✔ C1-01 aplicaciones concurrentes compiten por una misma recepción (64.287213ms)
+✔ C1-01 pagos y traslados compiten por la misma custodia (175.148641ms)
+✔ C1-03 rechaza PDF alterado y restauración sin archivo requerido (170.693167ms)
+✔ C1-01 SQLite conserva integridad tras rechazo concurrente (116.744698ms)
+✔ C1-01 dos conexiones SQL.js coordinadas recargan el estado antes de competir (31.065236ms)
+✔ cada respuesta del asistente produce el saldo que explica en pantalla (420.550872ms)
+✔ «No sé todavía» guarda la compra sin detalle, sin inventar deudas (53.066255ms)
+✔ la selección de pago traduce las respuestas simples (1.142485ms)
+✔ cada paso explica qué falta, y el de pago pide el pago, no una persona (E-15) (0.730466ms)
+✔ el carrusel es circular y el orden de fotos se mueve sin perder ninguna (0.407197ms)
+✔ las preferencias se guardan y un tema desconocido vuelve al inicial (0.793099ms)
+✔ hay diez temas y todos definen las mismas variables (1.37927ms)
+✔ guiada/InicioGuiado.vue compila (116.913513ms)
+✔ guiada/AsistenteGasto.vue compila (250.374045ms)
+✔ App.vue abre la versión guiada y el registro guiado desde Inicio y el menú (8.3736ms)
+✔ Recibí dinero: devolver baja lo adelantado, para gastar queda en custodia, no sé queda sin aplicar (81.6954ms)
+✔ RecibirGuiado compila y Inicio lo abre (64.093342ms)
+✔ al guardar, un borrador pendiente no se vuelve a escribir (E-16) (122.69968ms)
+✔ Informe guiado: por gestión, por empresa y por fechas, con totales de la API (147.95746ms)
+✔ InformeGuiado compila y Inicio lo abre (16.443016ms)
+✔ los tres asistentes muestran números, nombres y el paso actual (9.912093ms)
+✔ E-16: detener espera la escritura en curso antes de descartar el borrador (1.184502ms)
+✔ E-16: al salir se conserva el último borrador pendiente (0.929471ms)
+✔ reparto guiado conserva beneficiarios y fuentes explícitas (21.942944ms)
+✔ pago combinado guiado separa fondo y aporte propio y permite reembolso (25.50563ms)
+✔ compras consecutivas conservan centavos, moneda e idempotencia sin heredar el borrador (58.7804ms)
+✔ efectivo entregado: C$10000 menos C$5600 deja C$4400, sin descontar pagos propios o crédito (29.273115ms)
+✔ Ver cómo voy consulta agregados de la API e incluye asistencia configurable (18.716602ms)
+✔ E-16: un asistente nuevo espera la compra anterior incluso al cambiar de pantalla (0.558403ms)
+✔ activar y desactivar exigen autenticación y no guardan credenciales (3.578418ms)
+✔ no se habilita sin bloqueo del teléfono ni en navegador (0.866323ms)
+✔ montos exactos, factura como texto y validación negativa (3.629607ms)
+✔ compra, dos fotos, reinicio SQLite e idempotencia (207.451222ms)
+✔ Excel real con y sin imágenes y PDF legible (357.852031ms)
+✔ respaldo y restauración transaccional; corrupción y fallo preservan el estado (84.608945ms)
+✔ SQLite web conserva claves foráneas después de guardar y revertir (25.585469ms)
+✔ la versión proviene del sistema en la app y distingue el navegador (2.0888ms)
+ℹ tests 139
+ℹ suites 0
+ℹ pass 139
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4280.141686
+
+> gastos-e-informe-de-gastos@2.0.0-alfa.1 build
+> vite build
+
+vite v6.4.5 building for production...
+transforming...
+[plugin vite:resolve] Module "fs" has been externalized for browser compatibility, imported by "/tmp/gastos-fase08-cierre-29/node_modules/sql.js/dist/sql-wasm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "path" has been externalized for browser compatibility, imported by "/tmp/gastos-fase08-cierre-29/node_modules/sql.js/dist/sql-wasm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+[plugin vite:resolve] Module "crypto" has been externalized for browser compatibility, imported by "/tmp/gastos-fase08-cierre-29/node_modules/sql.js/dist/sql-wasm.js". See https://vite.dev/guide/troubleshooting.html#module-externalized-for-browser-compatibility for more details.
+✓ 295 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                         0.39 kB │ gzip:   0.26 kB
+dist/assets/sql-wasm-C1U8OeUW.wasm    659.81 kB │ gzip: 322.99 kB
+dist/assets/index-cIr_Bpy0.css        240.79 kB │ gzip:  41.66 kB
+dist/assets/base-7n7lP2Hl.js            0.36 kB │ gzip:   0.27 kB
+dist/assets/web-Cx0biYmF.js             0.36 kB │ gzip:   0.25 kB
+dist/assets/native-Bt1Ps5bI.js          0.72 kB │ gzip:   0.35 kB
+dist/assets/web-CTtzn8FA.js             0.76 kB │ gzip:   0.35 kB
+dist/assets/web-Dw2DJoKF.js             2.19 kB │ gzip:   0.85 kB
+dist/assets/web-Ct5YXJWW.js             8.73 kB │ gzip:   2.97 kB
+dist/assets/web-D4pzMydp.js             9.63 kB │ gzip:   1.34 kB
+dist/assets/index-IBgTXzGw.js          13.99 kB │ gzip:   2.74 kB
+dist/assets/web-sqlite-BiFn5Wk7.js     45.99 kB │ gzip:  16.45 kB
+dist/assets/index-BMZmZWcr.js       1,864.31 kB │ gzip: 603.19 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 11.08s

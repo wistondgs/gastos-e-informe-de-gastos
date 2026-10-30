@@ -15,6 +15,7 @@ case "$variante" in
   *) echo "Variante desconocida: $variante" >&2; exit 2 ;;
 esac
 cd "$raiz"
+read -r fuente_sha fuente_estado < <(scripts/android/identidad-fuente.sh)
 npm run android:sync >/dev/null
 (cd android && ./gradlew :app:assembleDebug "${extra[@]}" --no-daemon -q)
 apk="android/app/build/outputs/apk/debug/app-debug.apk"
@@ -23,7 +24,7 @@ paquete="$("$aapt" dump badging "$apk" | sed -n "s/^package: name='\([^']*\)' ve
 read -r nombre codigo version <<<"$paquete"
 sha="$(sha256sum "$apk" | cut -c1-64)"
 mkdir -p "$destino"
-salida="$destino/${nombre}-v${version}-c${codigo}-$(git rev-parse --short HEAD)-${sha:0:8}.apk"
+salida="$destino/${nombre}-v${version}-c${codigo}-${fuente_sha:0:7}-${fuente_estado}-${sha:0:8}.apk"
 cp "$apk" "$salida"
 echo "$salida"
-echo "paquete=$nombre version=$version codigo=$codigo sha256=$sha"
+echo "paquete=$nombre version=$version codigo=$codigo sha256=$sha fuente_sha=$fuente_sha fuente_estado=$fuente_estado"

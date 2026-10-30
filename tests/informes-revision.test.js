@@ -40,7 +40,7 @@ async function empaquetar(datos, manifiesto = { version: 1, archivos: {} }) {
 test("la migración 1→5 conserva compras, identificadores, ceros, importes y fotos (la base del APK PASO-A)", async () => {
   const db = adaptarSqlJs(SQL, baseV1().export(), () => {});
   await inicializar(db);
-  assert.equal(await version(db), 5);
+  assert.equal(await version(db), 8);
   const repo = repositorio(db);
   const [c] = await repo.compras();
   assert.equal(c.id, "previa");

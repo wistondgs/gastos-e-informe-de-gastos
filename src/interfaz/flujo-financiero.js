@@ -16,6 +16,7 @@ export function prepararAplicaciones(filas) {
 /** Prepara datos para la API; el cálculo y las validaciones de saldos son del dominio. */
 export function prepararCompraFinanciera(compra, seleccion) {
   const { tipo, parte_id: parteId, fondo } = seleccion;
+  if (!tipo) throw new Error("Elegí cómo pagaste la compra.");
   if (tipo === "sin_detalle") return { ...compra, forma_pago: "sin_detalle" };
   if (tipo === "personal")
     return {
@@ -51,6 +52,23 @@ export function prepararCompraFinanciera(compra, seleccion) {
     throw new Error("Elegí la persona o empresa relacionada con la compra.");
   if (tipo === "credito")
     return { ...compra, forma_pago: "credito", deudor_id: parteId };
+  if (tipo === "tercero") {
+    if (!seleccion.pagador_id)
+      throw new Error("Elegí quién pagó directamente.");
+    return {
+      ...compra,
+      forma_pago: "contado",
+      asignaciones: [{ parte_id: parteId, importe: compra.importe }],
+      pagos: [
+        {
+          origen: "tercero",
+          parte_id: seleccion.pagador_id,
+          importe: compra.importe,
+          asignacion: 0,
+        },
+      ],
+    };
+  }
   if (!["fondo", "propio", "combinado"].includes(tipo))
     throw new Error("Elegí cómo pagaste la compra.");
   const asignaciones = [{ parte_id: parteId, importe: compra.importe }];

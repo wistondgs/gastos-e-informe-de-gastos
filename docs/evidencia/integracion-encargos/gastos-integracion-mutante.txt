@@ -1,0 +1,68 @@
+✖ C$800 y compra de C$1,000 dejan C$200 de aporte propio (82.657327ms)
+✔ dos entregas de C$800 antes de comprar dejan C$600 (43.743661ms)
+✖ un anticipo posterior no cancela el aporte propio; el reembolso explícito sí (30.567763ms)
+✖ compras consecutivas concilian API, PDF y Excel sin duplicar (35.970687ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 1
+ℹ fail 3
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 559.760521
+
+✖ failing tests:
+
+test at ../../../../tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:31:1
+✖ C$800 y compra de C$1,000 dejan C$200 de aporte propio (82.657327ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 20000
+  
+      at comprobar (file:///tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:27:10)
+      at async TestContext.<anonymous> (file:///tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:35:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:387:3) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 20000,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:44:1
+✖ un anticipo posterior no cancela el aporte propio; el reembolso explícito sí (30.567763ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 20000
+  
+      at comprobar (file:///tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:27:10)
+      at async TestContext.<anonymous> (file:///tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:49:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 20000,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at ../../../../tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:53:1
+✖ compras consecutivas concilian API, PDF y Excel sin duplicar (35.970687ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly equal:
+  
+  0 !== 20000
+  
+      at comprobar (file:///tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:27:10)
+      at async TestContext.<anonymous> (file:///tmp/gastos-integracion-mutante/tests/integracion-encargos.test.js:59:3)
+      at async Test.run (node:internal/test_runner/test:1409:7)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:974:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 20000,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

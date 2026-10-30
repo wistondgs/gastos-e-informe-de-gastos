@@ -17,7 +17,7 @@ import {
 } from "./apoyo-informes.js";
 const gestion = {
   id: "gestion-1",
-  nombre: "Winston Managua",
+  nombre: "Juan Managua",
   fecha_inicio: "2026-10-20",
   fecha_fin: "2026-10-27",
 };
@@ -33,7 +33,7 @@ const prepararInforme = (g, items, opciones) =>
   );
 const base = {
   titulo: "Rendición de gastos",
-  responsable: "Winston D. Gutiérrez",
+  responsable: "Juan Pérez",
   destinatario: "Agrícola de prueba",
   corte: "2026-10-27",
   papel: "carta",
@@ -181,13 +181,22 @@ test("el PDF ejecutivo en Carta trae datos, tabla, totales separados y anexos", 
   const doc = await PDFDocument.load(await informePdf(m, files));
   const paginas = textoDePaginas(doc);
   const todo = paginas.flat();
+  assert.match(
+    todo.join(" "),
+    /No\s+registrado/,
+    "no suponer que la factura carece de número",
+  );
+  assert.ok(
+    todo.some((t) => t.includes("Compras con comprobante")),
+    "el conteo se refiere a compras y no a fotografías",
+  );
   assert.deepEqual(
     doc.getPages().map((p) => [p.getWidth(), p.getHeight()]),
     Array(doc.getPageCount()).fill([612, 792]),
   );
   // Resumen; la factura corta; la larga en 4 tramos; el voucher.
   assert.equal(doc.getPageCount(), 1 + 1 + 4 + 1);
-  assert.ok(todo.includes("Winston Managua"));
+  assert.ok(todo.includes("Juan Managua"));
   assert.ok(todo.includes("GR-GESTION1-R01"));
   assert.ok(todo.includes("C$ 12,550.75"));
   assert.ok(todo.includes("US$ 85.00"));

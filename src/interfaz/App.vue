@@ -5,6 +5,7 @@ import { Capacitor } from "@capacitor/core";
 import { App as Aplicacion } from "@capacitor/app";
 import { BiometricAuth } from "@aparajita/capacitor-biometric-auth";
 import { crearProteccion } from "./proteccion.js";
+import { crearSalidaCamara } from "./salida-camara.js";
 import { versionInstalada } from "./version.js";
 import { abrirApi } from "../api/dispositivo.js";
 import {
@@ -21,6 +22,17 @@ import {
   prepararAplicaciones,
 } from "./flujo-financiero.js";
 import EditorComprobante from "./EditorComprobante.vue";
+import InicioGuiado from "./guiada/InicioGuiado.vue";
+import AsistenteGasto from "./guiada/AsistenteGasto.vue";
+import RecibirGuiado from "./guiada/RecibirGuiado.vue";
+import InformeGuiado from "./guiada/InformeGuiado.vue";
+import VerComoVoy from "./guiada/VerComoVoy.vue";
+import iconoGastos from "./imagenes/icono-gastos.png";
+import {
+  leerPreferencias,
+  guardarPreferencias,
+  variablesTema,
+} from "./guiada/guia.js";
 import { crearBorradores } from "../datos/borradores.js";
 import { excel, pdf } from "../exportaciones/informes.js";
 import {
@@ -34,8 +46,26 @@ const historialPantallas = [];
 let autenticando = false;
 let borradorHabilitado = false;
 let pausaBorrador = false;
+const salidaCamara = crearSalidaCamara();
 let temporizadorBorrador = null;
 const borradores = crearBorradores();
+const preferencias = ref(leerPreferencias(globalThis.localStorage));
+const asistente = ref(null);
+const vistaGuiada = computed(
+  () =>
+    preferencias.value.guiada &&
+    [
+      "inicio",
+      "guiado",
+      "guiado-recibir",
+      "guiado-informe",
+      "guiado-estado",
+    ].includes(pantalla.value),
+);
+function cambiarPreferencia(cambio) {
+  preferencias.value = { ...preferencias.value, ...cambio };
+  guardarPreferencias(globalThis.localStorage, preferencias.value);
+}
 const nativo = Capacitor.isNativePlatform();
 const proteccion = crearProteccion({
   nativo,
@@ -43,8 +73,9 @@ const proteccion = crearProteccion({
   storage: localStorage,
 });
 const nuevoPago = () => ({
-  tipo: "sin_detalle",
+  tipo: "",
   parte_id: "",
+  pagador_id: "",
   fondo: "",
   forma_pago: "contado",
   deudor_id: "",
@@ -68,6 +99,16 @@ const repo = ref(null),
   saldos = ref([]),
   recepciones = ref([]),
   repartoIngreso = ref([]),
+  pasoIngreso = ref(1),
+  buscarIngreso = ref(""),
+  nuevoIngresoParte = ref({ nombre: "", tipo: "persona" }),
+  nuevaGestionIngreso = ref({
+    nombre: "",
+    fecha_inicio: "",
+    responsable_id: "",
+    descripcion: "",
+  }),
+  ultimaRecepcion = ref(null),
   aplicarIngreso = ref({
     id: "",
     aplicacion_id: crypto.randomUUID(),
@@ -85,6 +126,8 @@ const repo = ref(null),
     monto: "",
     moneda: "NIO",
     referencia: "",
+    finalidad: "",
+    beneficiario_id: "",
     destino: "anticipo",
   }),
   movimiento = ref({
@@ -158,6 +201,7 @@ const repo = ref(null),
     corte: "",
     responsable: "",
     destinatario: "",
+    destinatario_id: "",
     papel: "carta",
     estilo: "ejecutivo",
     incluirFotos: true,
@@ -174,7 +218,23 @@ function ir(destino) {
   mensaje.value = "";
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+function irDesdeGuiado(destino) {
+  if (destino === "gestiones") ir("guiado-estado");
+  else if (destino === "fondos") ir("guiado-recibir");
+  else if (destino === "respaldo") ir("guiado-informe");
+  else if (destino === "compras") todasLasCompras();
+  else ir(destino);
+}
+async function cerrarAsistente(destino) {
+  await cargar();
+  irDesdeGuiado(destino === "compras" ? "compras" : "inicio");
+}
 function atras() {
+  if (
+    ["guiado", "guiado-recibir", "guiado-informe"].includes(pantalla.value) &&
+    asistente.value?.atras()
+  )
+    return;
   if (editor.value) {
     editor.value = null;
     return;
@@ -195,10 +255,34 @@ const gestionesVisibles = computed(() =>
   ),
 );
 const comprasVisibles = computed(() =>
-  filtroGestion.value
-    ? compras.value.filter((c) => c.gestion_id === filtroGestion.value)
-    : compras.value,
+  filtroGestion.value === "sin-gestion"
+    ? compras.value.filter((c) => !c.gestion_id)
+    : compras.value.filter((c) => c.gestion_id === filtroGestion.value),
 );
+const gruposCompras = computed(() => {
+  const grupos = gestiones.value.map((g) => ({
+    id: g.id,
+    nombre: g.nombre,
+    cantidad: compras.value.filter((c) => c.gestion_id === g.id).length,
+  }));
+  const sinGestion = compras.value.filter((c) => !c.gestion_id).length;
+  if (sinGestion)
+    grupos.push({
+      id: "sin-gestion",
+      nombre: "Sin gestión",
+      cantidad: sinGestion,
+    });
+  for (const c of compras.value) {
+    if (c.gestion_id && !grupos.some((g) => g.id === c.gestion_id))
+      grupos.push({
+        id: c.gestion_id,
+        nombre: "Gestión no disponible",
+        cantidad: compras.value.filter((x) => x.gestion_id === c.gestion_id)
+          .length,
+      });
+  }
+  return grupos;
+});
 function verCompras(id) {
   filtroGestion.value = id;
   ir("compras");
@@ -290,6 +374,27 @@ watch(
   },
   { deep: true, flush: "sync" },
 );
+watch(
+  [ingreso, repartoIngreso, pasoIngreso],
+  () => {
+    if (!borradorHabilitado) return;
+    borradores
+      .guardar(
+        "recepcion",
+        JSON.parse(
+          JSON.stringify({
+            ingreso: ingreso.value,
+            reparto: repartoIngreso.value,
+            paso: pasoIngreso.value,
+          }),
+        ),
+      )
+      .catch(() => {
+        error.value = "No se pudo guardar el borrador de recepción.";
+      });
+  },
+  { deep: true, flush: "sync" },
+);
 async function operacion(fn) {
   if (ocupado.value) return;
   ocupado.value = true;
@@ -343,6 +448,7 @@ function opcionesGeneral() {
     corte: f.corte,
     responsable: f.responsable,
     destinatario: f.destinatario,
+    destinatario_id: f.destinatario_id || null,
     papel: f.papel,
     estilo: f.estilo,
     incluirFotos: f.incluirFotos,
@@ -435,10 +541,89 @@ async function desactivarCatalogo(item) {
     mensaje.value = "Elemento desactivado; su historia se conserva.";
   });
 }
+async function crearParteIngreso() {
+  await operacion(async () => {
+    const nombre = nuevoIngresoParte.value.nombre.trim();
+    if (!nombre) throw new Error("Indicá el nombre.");
+    if (
+      partesTodas.value.some(
+        (p) =>
+          p.nombre.trim().toLocaleLowerCase() === nombre.toLocaleLowerCase(),
+      )
+    )
+      throw new Error(
+        "Ya existe una persona o empresa con ese nombre. Elegila de la lista o revisá los registros desactivados.",
+      );
+    const { parte } = await api.partes.crear({
+      nombre,
+      tipo: nuevoIngresoParte.value.tipo,
+    });
+    await cargar();
+    ingreso.value.parte_id = parte.id;
+    buscarIngreso.value = "";
+    nuevoIngresoParte.value.nombre = "";
+  });
+}
+async function crearGestionIngreso() {
+  await operacion(async () => {
+    const g = nuevaGestionIngreso.value;
+    if (!g.nombre.trim() || !g.fecha_inicio)
+      throw new Error("Indicá nombre y fecha de inicio de la gestión.");
+    const id = crypto.randomUUID();
+    await api.gestiones.crear({
+      id,
+      nombre: g.nombre.trim(),
+      fecha_inicio: g.fecha_inicio,
+      responsable_id: g.responsable_id || null,
+      descripcion: g.descripcion.trim(),
+    });
+    await cargar();
+    repartoIngreso.value.push({
+      gestion_id: id,
+      monto: "",
+      destino: "anticipo",
+    });
+    nuevaGestionIngreso.value = {
+      nombre: "",
+      fecha_inicio: "",
+      responsable_id: "",
+      descripcion: "",
+    };
+    mensaje.value = "Gestión creada; indicá cuánto querés aplicarle.";
+  });
+}
+function avanzarIngreso() {
+  error.value = "";
+  try {
+    if (pasoIngreso.value === 1 && !ingreso.value.parte_id)
+      throw new Error("Elegí quién entrega el dinero.");
+    if (pasoIngreso.value === 2) prepararAplicaciones(repartoIngreso.value);
+    if (pasoIngreso.value === 3) {
+      const total = centavos(ingreso.value.monto);
+      if (!ingreso.value.fecha) throw new Error("Indicá la fecha.");
+      const aplicado = prepararAplicaciones(repartoIngreso.value).reduce(
+        (n, a) => n + a.importe,
+        0,
+      );
+      if (aplicado > total)
+        throw new Error("Lo aplicado no puede superar lo recibido.");
+    }
+    pasoIngreso.value = Math.min(4, pasoIngreso.value + 1);
+  } catch (e) {
+    error.value = e.message;
+  }
+}
 async function recibirDinero() {
   await operacion(async () => {
     const i = ingreso.value;
     const importe = centavos(i.monto);
+    const resumen = {
+      parte: partesTodas.value.find((p) => p.id === i.parte_id)?.nombre || "",
+      importe,
+      moneda: i.moneda,
+      fecha: i.fecha,
+      aplicaciones: prepararAplicaciones(repartoIngreso.value),
+    };
     await api.fondos.recibir({
       id: i.id,
       fecha: i.fecha,
@@ -446,12 +631,20 @@ async function recibirDinero() {
       importe,
       moneda: i.moneda,
       referencia: i.referencia,
+      finalidad: i.finalidad || "",
+      beneficiario_id: i.beneficiario_id || null,
       aplicaciones: prepararAplicaciones(repartoIngreso.value),
     });
+    ultimaRecepcion.value = resumen;
     i.monto = "";
     i.referencia = "";
+    i.finalidad = "";
+    i.beneficiario_id = "";
+    i.parte_id = "";
     repartoIngreso.value = [];
     i.id = crypto.randomUUID();
+    pasoIngreso.value = 1;
+    if (borradorHabilitado) await borradores.descartar("recepcion");
     await cargar();
     mensaje.value =
       "Entrada registrada. Revisá sus aplicaciones y el importe que queda sin aplicar.";
@@ -542,9 +735,15 @@ async function iniciarDatos() {
       form.value = recuperado.form;
       form.value.catalogos ||= [];
       pago.value = { ...nuevoPago(), ...recuperado.pago };
-      paso.value = recuperado.paso;
+      paso.value = Math.min(recuperado.paso, 3);
       imagenes.value = recuperado.imagenes;
       mensaje.value = "Recuperamos el borrador de tu compra.";
+    }
+    const ingresoGuardado = await borradores.obtener("recepcion");
+    if (ingresoGuardado) {
+      ingreso.value = ingresoGuardado.ingreso;
+      repartoIngreso.value = ingresoGuardado.reparto;
+      pasoIngreso.value = ingresoGuardado.paso;
     }
     borradorHabilitado = true;
   } catch {
@@ -592,7 +791,12 @@ onMounted(async () => {
         if (!isActive) {
           clearTimeout(temporizadorBorrador);
           guardarBorrador();
-          if (seguridadActiva.value && !autenticando) bloqueada.value = true;
+          if (
+            seguridadActiva.value &&
+            !autenticando &&
+            !salidaCamara.pendiente()
+          )
+            bloqueada.value = true;
         }
       },
     );
@@ -607,7 +811,7 @@ onUnmounted(() => {
 function tipoDe(bytes) {
   return bytes[0] === 137 ? "image/png" : "image/jpeg";
 }
-async function agregar(bytes, clase = "factura") {
+async function agregar(bytes, clase = "otro") {
   const tipo = tipoDe(bytes);
   verificarImagen(bytes, tipo);
   imagenes.value.push({ bytes, tipo, clase });
@@ -621,12 +825,14 @@ async function adjuntar(event) {
 }
 async function camara() {
   await operacion(async () => {
-    const foto = await Camera.getPhoto({
-      quality: 85,
-      resultType: CameraResultType.DataUrl,
-      source: CameraSource.Camera,
-      correctOrientation: true,
-    });
+    const foto = await salidaCamara.ejecutar(() =>
+      Camera.getPhoto({
+        quality: 85,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        correctOrientation: true,
+      }),
+    );
     const base64 = foto.dataUrl?.split(",")[1];
     if (!base64) throw new Error("La cámara no devolvió una imagen.");
     await agregar(base64ABytes(base64));
@@ -699,12 +905,14 @@ async function guardarComprobantesExistentes(nuevas) {
 }
 async function camaraExistente() {
   await operacion(async () => {
-    const foto = await Camera.getPhoto({
-      quality: 85,
-      resultType: CameraResultType.DataUrl,
-      source: CameraSource.Camera,
-      correctOrientation: true,
-    });
+    const foto = await salidaCamara.ejecutar(() =>
+      Camera.getPhoto({
+        quality: 85,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        correctOrientation: true,
+      }),
+    );
     const base64 = foto.dataUrl?.split(",")[1];
     if (!base64) throw new Error("La cámara no devolvió una imagen.");
     const bytes = base64ABytes(base64),
@@ -862,11 +1070,15 @@ function elegirGestion(id) {
 }
 function avanzar() {
   error.value = "";
-  if (paso.value === 1 && !form.value.concepto.trim()) {
-    error.value = "Indicá qué compraste.";
-    return;
-  }
   if (paso.value === 2) {
+    if (
+      !form.value.concepto.trim() ||
+      !form.value.fecha_compra ||
+      !form.value.proveedor.trim()
+    ) {
+      error.value = "Completá concepto, fecha y proveedor.";
+      return;
+    }
     try {
       centavos(form.value.monto);
     } catch (e) {
@@ -874,12 +1086,30 @@ function avanzar() {
       return;
     }
   }
-  if (
-    paso.value === 3 &&
-    (!form.value.fecha_compra || !form.value.proveedor.trim())
-  ) {
-    error.value = "Completá la fecha y el proveedor.";
-    return;
+  if (paso.value === 3) {
+    try {
+      if (
+        ["fondo", "combinado"].includes(pago.value.tipo) &&
+        !saldos.value.some(
+          (s) =>
+            s.tipo === "custodia" &&
+            s.gestion_id === form.value.gestion_id &&
+            s.moneda === form.value.moneda &&
+            s.parte_id === pago.value.parte_id &&
+            s.importe > 0,
+        )
+      )
+        throw new Error(
+          "Elegí una fuente con fondos disponibles en esta gestión y moneda.",
+        );
+      prepararCompraFinanciera(
+        { ...form.value, importe: centavos(form.value.monto) },
+        pago.value,
+      );
+    } catch (e) {
+      error.value = e.message;
+      return;
+    }
   }
   paso.value = Math.min(4, paso.value + 1);
   window.scrollTo({ top: 0, behavior: "smooth" });
@@ -999,6 +1229,7 @@ function prepararInformeDe(g) {
     titulo: ajustes.value.encabezado || "Informe de gastos",
     responsable: ajustes.value.responsable,
     destinatario: ajustes.value.destinatario,
+    destinatario_id: "",
     corte,
     papel: "carta",
     estilo: "ejecutivo",
@@ -1145,7 +1376,7 @@ async function restaurar(event) {
 }
 </script>
 <template>
-  <div class="app-shell">
+  <div class="app-shell" :style="variablesTema(preferencias.tema)">
     <main v-if="bloqueada" class="wrap main">
       <section class="card">
         <h1>Mis gastos</h1>
@@ -1161,15 +1392,96 @@ async function restaurar(event) {
         </button>
       </section>
     </main>
-    <template v-else>
-      <header class="top">
+    <div v-show="!bloqueada">
+      <InicioGuiado
+        v-if="pantalla === 'inicio' && preferencias.guiada"
+        :compras="compras"
+        :gestiones="gestiones"
+        :saldos="saldos"
+        :partes="partesTodas"
+        :aprendizaje="preferencias.aprendizaje"
+        :tema="preferencias.tema"
+        @registrar="ir('guiado')"
+        @ir="irDesdeGuiado"
+        @aprendizaje="(v) => cambiarPreferencia({ aprendizaje: v })"
+        @tema="(v) => cambiarPreferencia({ tema: v })"
+        @clasica="cambiarPreferencia({ guiada: false })"
+      />
+      <AsistenteGasto
+        v-if="pantalla === 'guiado'"
+        ref="asistente"
+        :api="api"
+        :gestiones="gestiones"
+        :partes="partes"
+        :saldos="saldos"
+        :aprendizaje="preferencias.aprendizaje"
+        :tema="preferencias.tema"
+        :nativo="nativo"
+        :abrir-camara="
+          (opciones) => salidaCamara.ejecutar(() => Camera.getPhoto(opciones))
+        "
+        :fecha="hoy()"
+        @aprendizaje="(v) => cambiarPreferencia({ aprendizaje: v })"
+        @guardado="cargar"
+        @cerrar="cerrarAsistente"
+      />
+      <RecibirGuiado
+        v-if="pantalla === 'guiado-recibir'"
+        ref="asistente"
+        :api="api"
+        :gestiones="gestiones"
+        :partes="partes"
+        :saldos="saldos"
+        :aprendizaje="preferencias.aprendizaje"
+        :tema="preferencias.tema"
+        :fecha="hoy()"
+        @aprendizaje="(v) => cambiarPreferencia({ aprendizaje: v })"
+        @guardado="cargar"
+        @cerrar="cerrarAsistente"
+      />
+      <InformeGuiado
+        v-if="pantalla === 'guiado-informe'"
+        ref="asistente"
+        :api="api"
+        :gestiones="gestiones"
+        :partes="partes"
+        :ajustes="ajustes"
+        :aprendizaje="preferencias.aprendizaje"
+        :tema="preferencias.tema"
+        :fecha="hoy()"
+        @aprendizaje="(v) => cambiarPreferencia({ aprendizaje: v })"
+        @emitido="cargar"
+        @cerrar="cerrarAsistente"
+      />
+      <VerComoVoy
+        v-if="pantalla === 'guiado-estado'"
+        :api="api"
+        :gestiones="gestiones"
+        :partes="partesTodas"
+        :compras="compras"
+        :tema="preferencias.tema"
+        :aprendizaje="preferencias.aprendizaje"
+        @aprendizaje="(v) => cambiarPreferencia({ aprendizaje: v })"
+        @cerrar="ir('inicio')"
+        @gestion="verGestion"
+        @compra="
+          (id) => {
+            const c = compras.find((x) => x.id === id);
+            if (c) ver(c);
+          }
+        "
+        @registrar="ir('guiado')"
+        @recibir="ir('fondos')"
+      />
+      <header v-if="!vistaGuiada" class="top">
         <div class="wrap">
           <span class="eyebrow">REGISTRO SIN CONEXIÓN</span>
+          <img :src="iconoGastos" class="icono-app" alt="" />
           <h1>Mis gastos</h1>
           <p>Compras y comprobantes en tu dispositivo.</p>
         </div>
       </header>
-      <main class="wrap main">
+      <main class="wrap main" :class="{ 'tras-guiada': vistaGuiada }">
         <p v-if="error" class="alert error" role="alert">{{ error }}</p>
         <p v-if="mensaje" class="alert success" role="status">{{ mensaje }}</p>
         <form
@@ -1205,7 +1517,17 @@ async function restaurar(event) {
           @guardar="guardarAjusteImagen"
           @cancelar="editor = null"
         />
-        <section v-show="pantalla === 'inicio'" class="welcome">
+        <section
+          v-show="pantalla === 'inicio' && !preferencias.guiada"
+          class="welcome"
+        >
+          <button
+            type="button"
+            class="primary"
+            @click="cambiarPreferencia({ guiada: true })"
+          >
+            Usar Modo Fácil, paso a paso
+          </button>
           <div class="welcome-copy">
             <span class="section-kicker">TU ESPACIO</span>
             <h2>Tu día, más claro.</h2>
@@ -1219,7 +1541,7 @@ async function restaurar(event) {
             aria-label="Acerca de Mis gastos"
             @click="ir('acerca')"
           >
-            Desarrollado por W Gutiérrez
+            Desarrollado por W. Gutiérrez
           </button>
           <button
             class="primary welcome-button"
@@ -1261,7 +1583,8 @@ async function restaurar(event) {
           </div>
           <p class="about-description">Compras y comprobantes, a tu alcance.</p>
           <div class="about-detail">
-            <span>Desarrollo</span><strong>Desarrollado por W Gutiérrez</strong>
+            <span>Desarrollo</span
+            ><strong>Desarrollado por W. Gutiérrez</strong>
           </div>
           <div class="about-detail">
             <span>Versión</span><strong>{{ version }}</strong>
@@ -1388,88 +1711,263 @@ async function restaurar(event) {
           </form>
           <h3>Recibir dinero</h3>
           <form class="step-fields" @submit.prevent="recibirDinero">
-            <label
-              >Quién entrega<select v-model="ingreso.parte_id" required>
-                <option value="">Elegí una persona o empresa</option>
-                <option v-for="p in partes" :key="p.id" :value="p.id">
-                  {{ p.nombre }}
-                </option>
-              </select></label
-            >
-            <label
-              >Fecha<input v-model="ingreso.fecha" type="date" required
-            /></label>
-            <label
-              >Importe<input
-                v-model="ingreso.monto"
-                inputmode="decimal"
-                placeholder="0.00"
-                required
-            /></label>
-            <label
-              >Moneda<select v-model="ingreso.moneda">
-                <option value="NIO">Córdobas (C$)</option>
-                <option value="USD">Dólares (US$)</option>
-              </select></label
-            >
-            <label
-              >Referencia <small>(opcional)</small
-              ><input v-model="ingreso.referencia" maxlength="120"
-            /></label>
-            <p class="hint">
-              Agregá las gestiones y el importe para cada una. Lo no asignado
-              queda disponible para aplicar después.
-            </p>
-            <div
-              v-for="(a, indice) in repartoIngreso"
-              :key="indice"
-              class="step-fields"
-            >
+            <p class="hint">Paso {{ pasoIngreso }} de 4</p>
+            <div v-if="pasoIngreso === 1" class="step-fields">
               <label
-                >Gestión<select v-model="a.gestion_id" required>
-                  <option value="">Elegí una gestión</option>
-                  <option v-for="g in gestiones" :key="g.id" :value="g.id">
-                    {{ g.nombre }}
+                >Buscar persona o empresa<input
+                  v-model.trim="buscarIngreso"
+                  placeholder="Escribí un nombre"
+              /></label>
+              <label
+                >Quién entrega<select v-model="ingreso.parte_id" required>
+                  <option value="">Elegí una persona o empresa</option>
+                  <option
+                    v-for="p in partes.filter((p) =>
+                      p.nombre
+                        .toLocaleLowerCase()
+                        .includes(buscarIngreso.toLocaleLowerCase()),
+                    )"
+                    :key="p.id"
+                    :value="p.id"
+                  >
+                    {{ p.nombre }}
                   </option>
                 </select></label
               >
               <label
-                >Importe a aplicar<input
-                  v-model="a.monto"
-                  inputmode="decimal"
-                  required
+                >Nuevo nombre<input
+                  v-model.trim="nuevoIngresoParte.nombre"
+                  maxlength="120"
               /></label>
               <label
-                >Uso<select v-model="a.destino">
-                  <option value="anticipo">Dinero para compras</option>
-                  <option value="reembolso">Reembolso de mi adelanto</option>
+                >Tipo<select v-model="nuevoIngresoParte.tipo">
+                  <option value="persona">Persona</option>
+                  <option value="empresa">Empresa</option>
                 </select></label
               >
               <button
-                class="text-control"
                 type="button"
-                @click="repartoIngreso.splice(indice, 1)"
+                class="secondary"
+                @click="crearParteIngreso"
               >
-                Quitar aplicación
+                Crear y seleccionar
               </button>
             </div>
-            <button
-              class="secondary"
-              type="button"
-              @click="
-                repartoIngreso.push({
-                  gestion_id: '',
-                  monto: '',
-                  destino: 'anticipo',
-                })
-              "
-            >
-              Agregar gestión
-            </button>
-            <button class="primary" type="submit" :disabled="ocupado || !repo">
-              Guardar dinero recibido
-            </button>
+            <div v-if="pasoIngreso === 3" class="step-fields">
+              <label
+                >Fecha<input v-model="ingreso.fecha" type="date" required
+              /></label>
+              <label
+                >Importe<input
+                  v-model="ingreso.monto"
+                  inputmode="decimal"
+                  placeholder="0.00"
+                  required
+              /></label>
+              <label
+                >Moneda<select v-model="ingreso.moneda">
+                  <option value="NIO">Córdobas (C$)</option>
+                  <option value="USD">Dólares (US$)</option>
+                </select></label
+              >
+              <label
+                >Referencia <small>(opcional)</small
+                ><input v-model="ingreso.referencia" maxlength="120"
+              /></label>
+            </div>
+            <div v-if="pasoIngreso === 2" class="step-fields">
+              <label
+                >Beneficiario del encargo <small>(opcional)</small
+                ><select v-model="ingreso.beneficiario_id">
+                  <option value="">Sin indicar</option>
+                  <option v-for="p in partes" :key="p.id" :value="p.id">
+                    {{ p.nombre }}
+                  </option>
+                </select></label
+              >
+              <label
+                >Finalidad del dinero <small>(opcional)</small
+                ><input v-model.trim="ingreso.finalidad" maxlength="500"
+              /></label>
+              <p class="hint">
+                Agregá las gestiones y el importe para cada una. Lo no asignado
+                queda disponible para aplicar después.
+              </p>
+              <div
+                v-for="(a, indice) in repartoIngreso"
+                :key="indice"
+                class="step-fields"
+              >
+                <label
+                  >Gestión<select v-model="a.gestion_id" required>
+                    <option value="">Elegí una gestión</option>
+                    <option v-for="g in gestiones" :key="g.id" :value="g.id">
+                      {{ g.nombre }}
+                    </option>
+                  </select></label
+                >
+                <label
+                  >Importe a aplicar<input
+                    v-model="a.monto"
+                    inputmode="decimal"
+                    required
+                /></label>
+                <label
+                  >Uso<select v-model="a.destino">
+                    <option value="anticipo">Dinero para compras</option>
+                    <option value="reembolso">Reembolso de mi adelanto</option>
+                  </select></label
+                >
+                <button
+                  class="text-control"
+                  type="button"
+                  @click="repartoIngreso.splice(indice, 1)"
+                >
+                  Quitar aplicación
+                </button>
+              </div>
+              <button
+                class="secondary"
+                type="button"
+                @click="
+                  repartoIngreso.push({
+                    gestion_id: '',
+                    monto: '',
+                    destino: 'anticipo',
+                  })
+                "
+              >
+                Agregar gestión
+              </button>
+              <details>
+                <summary>Crear gestión nueva</summary>
+                <label
+                  >Nombre<input
+                    v-model.trim="nuevaGestionIngreso.nombre"
+                    maxlength="120"
+                /></label>
+                <label
+                  >Fecha de inicio<input
+                    v-model="nuevaGestionIngreso.fecha_inicio"
+                    type="date"
+                /></label>
+                <label
+                  >Responsable<select
+                    v-model="nuevaGestionIngreso.responsable_id"
+                  >
+                    <option value="">Sin indicar</option>
+                    <option v-for="p in partes" :key="p.id" :value="p.id">
+                      {{ p.nombre }}
+                    </option>
+                  </select></label
+                >
+                <label
+                  >Finalidad o descripción<input
+                    v-model.trim="nuevaGestionIngreso.descripcion"
+                    maxlength="500"
+                /></label>
+                <button
+                  type="button"
+                  class="secondary"
+                  @click="crearGestionIngreso"
+                >
+                  Crear gestión
+                </button>
+              </details>
+            </div>
+            <div v-if="pasoIngreso === 4" class="step-fields">
+              <strong>Revisá antes de guardar</strong>
+              <p>
+                Entrega:
+                {{ partesTodas.find((p) => p.id === ingreso.parte_id)?.nombre }}
+                · {{ ingreso.monto }} {{ ingreso.moneda }} · {{ ingreso.fecha }}
+              </p>
+              <p>
+                Beneficiario:
+                {{
+                  partesTodas.find((p) => p.id === ingreso.beneficiario_id)
+                    ?.nombre || "No indicado"
+                }}
+                · Finalidad: {{ ingreso.finalidad || "No indicada" }}
+              </p>
+              <p v-for="(a, i) in repartoIngreso" :key="i">
+                {{ gestiones.find((g) => g.id === a.gestion_id)?.nombre }} ·
+                {{ a.destino === "anticipo" ? "Para compras" : "Reembolso" }} ·
+                {{ a.monto }} {{ ingreso.moneda }}
+              </p>
+              <p>
+                Sin aplicar:
+                {{
+                  (
+                    (centavos(ingreso.monto) -
+                      prepararAplicaciones(repartoIngreso).reduce(
+                        (n, a) => n + a.importe,
+                        0,
+                      )) /
+                    100
+                  ).toFixed(2)
+                }}
+                {{ ingreso.moneda }}
+              </p>
+            </div>
+            <div class="step-actions">
+              <button
+                v-if="pasoIngreso > 1"
+                class="secondary"
+                type="button"
+                @click="pasoIngreso--"
+              >
+                Atrás
+              </button>
+              <button
+                v-if="pasoIngreso < 4"
+                class="primary"
+                type="button"
+                @click="avanzarIngreso"
+              >
+                Continuar
+              </button>
+              <button
+                v-else
+                class="primary"
+                type="submit"
+                :disabled="ocupado || !repo"
+              >
+                Guardar dinero recibido
+              </button>
+            </div>
           </form>
+          <div v-if="ultimaRecepcion" class="gestion-item">
+            <strong>Recepción guardada</strong>
+            <p>
+              {{ ultimaRecepcion.parte }} ·
+              {{ (ultimaRecepcion.importe / 100).toFixed(2) }}
+              {{ ultimaRecepcion.moneda }} · {{ ultimaRecepcion.fecha }}
+            </p>
+            <p>
+              Aplicado:
+              {{
+                (
+                  ultimaRecepcion.aplicaciones.reduce(
+                    (n, a) => n + a.importe,
+                    0,
+                  ) / 100
+                ).toFixed(2)
+              }}
+              · Sin aplicar:
+              {{
+                (
+                  (ultimaRecepcion.importe -
+                    ultimaRecepcion.aplicaciones.reduce(
+                      (n, a) => n + a.importe,
+                      0,
+                    )) /
+                  100
+                ).toFixed(2)
+              }}
+              {{ ultimaRecepcion.moneda }}
+            </p>
+          </div>
           <h3>Devolver o trasladar fondos</h3>
           <form class="step-fields" @submit.prevent="registrarMovimiento">
             <label
@@ -1684,7 +2182,7 @@ async function restaurar(event) {
               >Nombre de la gestión<input
                 v-model.trim="nombreGestion"
                 maxlength="120"
-                placeholder="Ej. Winston Managua"
+                placeholder="Ej. Juan Managua"
                 required /></label
             ><label
               >Fecha de inicio<input
@@ -1981,10 +2479,10 @@ async function restaurar(event) {
             Completá los datos y agregá los comprobantes que tengas.
           </p>
           <div class="steps" aria-label="Progreso de la compra">
-            <span :class="{ current: paso === 1 }">1 · Compra</span
-            ><span :class="{ current: paso === 2 }">2 · Importe</span
-            ><span :class="{ current: paso === 3 }">3 · Datos</span
-            ><span :class="{ current: paso === 4 }">4 · Foto</span>
+            <span :class="{ current: paso === 1 }">1 · Destino</span
+            ><span :class="{ current: paso === 2 }">2 · Compra</span
+            ><span :class="{ current: paso === 3 }">3 · Pago</span
+            ><span :class="{ current: paso === 4 }">4 · Comprobantes</span>
           </div>
           <form @submit.prevent="guardar">
             <div v-if="paso === 1" class="step-fields">
@@ -2011,6 +2509,8 @@ async function restaurar(event) {
                   Iniciar gestión
                 </button>
               </p>
+            </div>
+            <div v-if="paso === 2" class="step-fields">
               <label
                 >¿Qué compraste?<input
                   v-model.trim="form.concepto"
@@ -2018,8 +2518,7 @@ async function restaurar(event) {
                   required
                   placeholder="Ej. Materiales para la finca"
               /></label>
-            </div>
-            <div v-if="paso === 2" class="step-fields">
+
               <label
                 >¿Cuánto costó?<input
                   v-model="form.monto"
@@ -2032,14 +2531,14 @@ async function restaurar(event) {
                   <option value="USD">Dólares (US$)</option>
                 </select></label
               >
-            </div>
-            <div v-if="paso === 3" class="step-fields">
+
               <label
                 >¿Dónde compraste?<input
                   v-model.trim="form.proveedor"
                   maxlength="250"
                   required
-                  placeholder="Nombre del proveedor" /></label
+                  placeholder="Nombre del proveedor"
+                  autocomplete="off" /></label
               ><label
                 >Fecha de compra<input
                   v-model="form.fecha_compra"
@@ -2047,13 +2546,17 @@ async function restaurar(event) {
                   required
               /></label>
             </div>
-            <div v-if="paso === 4" class="step-fields">
+            <div v-if="paso === 3" class="step-fields">
               <label
                 >¿Quién pagó esta compra?<select v-model="pago.tipo">
+                  <option value="">Elegí cómo pagaste</option>
                   <option value="propio">Yo, con mi dinero</option>
                   <option value="personal">Yo, es un gasto personal</option>
                   <option value="fondo">Usé dinero que me entregaron</option>
                   <option value="credito">El proveedor dio crédito</option>
+                  <option value="tercero">
+                    Otra persona o empresa pagó directamente
+                  </option>
                   <option value="combinado">
                     Una parte con dinero recibido y otra con mi dinero
                   </option>
@@ -2067,18 +2570,53 @@ async function restaurar(event) {
               >
               <label
                 v-if="
+                  pago.tipo &&
                   !['sin_detalle', 'avanzado', 'personal'].includes(pago.tipo)
                 "
                 >{{
                   pago.tipo === "credito"
                     ? "Quién debe al proveedor"
-                    : pago.tipo === "propio"
-                      ? "Quién debe reembolsarte"
-                      : "De quién son los fondos"
+                    : pago.tipo === "tercero"
+                      ? "Para quién fue la compra"
+                      : pago.tipo === "propio"
+                        ? "Quién debe reembolsarte"
+                        : "De quién son los fondos"
                 }}<select v-model="pago.parte_id" required>
                   <option value="">Elegí una persona o empresa</option>
-                  <option v-for="p in partes" :key="p.id" :value="p.id">
-                    {{ p.nombre }}
+                  <option
+                    v-for="p in partes.filter(
+                      (x) =>
+                        !['fondo', 'combinado'].includes(pago.tipo) ||
+                        saldos.some(
+                          (s) =>
+                            s.tipo === 'custodia' &&
+                            s.gestion_id === form.gestion_id &&
+                            s.moneda === form.moneda &&
+                            s.parte_id === x.id &&
+                            s.importe > 0,
+                        ),
+                    )"
+                    :key="p.id"
+                    :value="p.id"
+                  >
+                    {{ p.nombre
+                    }}<template
+                      v-if="['fondo', 'combinado'].includes(pago.tipo)"
+                    >
+                      · disponible
+                      {{
+                        (
+                          (saldos.find(
+                            (s) =>
+                              s.tipo === "custodia" &&
+                              s.gestion_id === form.gestion_id &&
+                              s.moneda === form.moneda &&
+                              s.parte_id === p.id,
+                          )?.importe || 0) / 100
+                        ).toFixed(2)
+                      }}
+                      {{ form.moneda }}</template
+                    >
                   </option>
                 </select></label
               >
@@ -2091,6 +2629,14 @@ async function restaurar(event) {
               >
                 Primero agregá la persona o empresa en «Recibir dinero».
               </p>
+              <label v-if="pago.tipo === 'tercero'"
+                >Quién pagó directamente<select v-model="pago.pagador_id">
+                  <option value="">Elegí la persona o empresa</option>
+                  <option v-for="p in partes" :key="p.id" :value="p.id">
+                    {{ p.nombre }}
+                  </option>
+                </select></label
+              >
               <label v-if="pago.tipo === 'combinado'"
                 >Importe pagado con el fondo<input
                   v-model="pago.fondo"
@@ -2228,6 +2774,12 @@ async function restaurar(event) {
                   Agregar pago
                 </button>
               </div>
+            </div>
+            <div v-if="paso === 4" class="step-fields">
+              <p class="hint">
+                Revisá: {{ form.concepto }} · {{ form.monto }}
+                {{ form.moneda }} · pago: {{ pago.tipo }}.
+              </p>
               <label
                 >Número de factura <small>(opcional)</small
                 ><input
@@ -2332,25 +2884,43 @@ async function restaurar(event) {
         </section>
         <section v-show="pantalla === 'compras'" class="card">
           <h2>Compras guardadas</h2>
-          <p class="hint">
-            Las compras anteriores sin gestión aparecen como «Sin gestión».
+          <p v-if="!filtroGestion" class="hint">
+            Elegí una gestión para ver sus compras.
           </p>
+          <template v-if="!filtroGestion">
+            <p v-if="!gruposCompras.length" class="hint">
+              Todavía no hay gestiones ni compras registradas.
+            </p>
+            <button
+              v-for="g in gruposCompras"
+              :key="g.id"
+              type="button"
+              class="purchase"
+              @click="filtroGestion = g.id"
+            >
+              <strong>{{ g.nombre }}</strong
+              ><span
+                >{{ g.cantidad }}
+                {{ g.cantidad === 1 ? "compra" : "compras" }}</span
+              >
+            </button>
+          </template>
           <p v-if="filtroGestion" class="hint">
             Gestión:
-            {{ gestiones.find((g) => g.id === filtroGestion)?.nombre }} ·
+            {{ gruposCompras.find((g) => g.id === filtroGestion)?.nombre }} ·
             <button
               class="inline-link"
               type="button"
               @click="filtroGestion = null"
             >
-              Ver todas
+              Elegir otra gestión
             </button>
           </p>
-          <p v-if="!comprasVisibles.length" class="hint">
+          <p v-if="filtroGestion && !comprasVisibles.length" class="hint">
             Todavía no hay compras registradas.
           </p>
           <button
-            v-for="c in comprasVisibles"
+            v-for="c in filtroGestion ? comprasVisibles : []"
             :key="c.id"
             class="purchase"
             type="button"
@@ -2713,6 +3283,15 @@ async function restaurar(event) {
                 maxlength="120"
                 placeholder="Responsable de los gastos" /></label
             ><label
+              >Destinatario registrado<select
+                v-model="informeForm.destinatario_id"
+              >
+                <option value="">Escribir nombre manualmente</option>
+                <option v-for="p in partes" :key="p.id" :value="p.id">
+                  {{ p.nombre }}
+                </option>
+              </select></label
+            ><label v-if="!informeForm.destinatario_id"
               >Destinatario<input
                 v-model="informeForm.destinatario"
                 maxlength="120"
@@ -2929,6 +3508,15 @@ async function restaurar(event) {
                 v-model.trim="informeGeneral.responsable"
                 maxlength="120" /></label
             ><label
+              >Destinatario registrado<select
+                v-model="informeGeneral.destinatario_id"
+              >
+                <option value="">Escribir nombre manualmente</option>
+                <option v-for="p in partes" :key="p.id" :value="p.id">
+                  {{ p.nombre }}
+                </option>
+              </select></label
+            ><label v-if="!informeGeneral.destinatario_id"
               >Destinatario<input
                 v-model.trim="informeGeneral.destinatario"
                 maxlength="120" /></label
@@ -2988,6 +3576,35 @@ async function restaurar(event) {
         <section v-show="pantalla === 'respaldo'" class="card">
           <h2>Informes y respaldo</h2>
           <h3>Catálogos descriptivos</h3>
+          <div v-if="preferencias.aprendizaje" class="ayuda-catalogos">
+            <strong>¿Para qué sirven?</strong>
+            <p>
+              Son etiquetas para organizar compras. Podés crear solo las que
+              necesités y después elegirlas al registrar una compra.
+            </p>
+            <ul>
+              <li>
+                <strong>Cuenta:</strong> identifica de dónde se pagó, por
+                ejemplo «Caja de oficina».
+              </li>
+              <li>
+                <strong>Medio de pago:</strong> cómo se pagó, por ejemplo
+                «Efectivo» o «Tarjeta».
+              </li>
+              <li>
+                <strong>Categoría:</strong> qué clase de gasto fue, por ejemplo
+                «Farmacia» o «Supermercado».
+              </li>
+              <li>
+                <strong>Destino:</strong> para dónde o para qué fue, por ejemplo
+                «Oficina de Managua».
+              </li>
+            </ul>
+            <p>
+              Estas etiquetas no mueven dinero ni reemplazan el registro del
+              pago o del fondo.
+            </p>
+          </div>
           <p class="hint">
             Cuentas, medios, categorías y destinos no cambian automáticamente
             los saldos.
@@ -3130,7 +3747,13 @@ async function restaurar(event) {
           sincroniza información.
         </p>
       </main>
-      <nav class="bottom-nav" aria-label="Navegación principal">
+      <nav
+        v-if="
+          !['guiado', 'guiado-recibir', 'guiado-informe'].includes(pantalla)
+        "
+        class="bottom-nav"
+        aria-label="Navegación principal"
+      >
         <button
           type="button"
           :class="{ active: pantalla === 'inicio' }"
@@ -3151,7 +3774,7 @@ async function restaurar(event) {
           type="button"
           :class="{ active: pantalla === 'registro' }"
           :aria-current="pantalla === 'registro' ? 'page' : undefined"
-          @click="ir('registro')"
+          @click="ir(preferencias.guiada ? 'guiado' : 'registro')"
         >
           <span aria-hidden="true">＋</span>Registrar
         </button>
@@ -3176,10 +3799,34 @@ async function restaurar(event) {
           <span aria-hidden="true">↥</span>Respaldo
         </button>
       </nav>
-    </template>
+    </div>
   </div>
 </template>
 <style scoped>
+.icono-app {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+  padding: 4px;
+  background: white;
+  border-radius: 10px;
+  vertical-align: middle;
+  margin-left: 10px;
+}
+.ayuda-catalogos {
+  padding: 14px;
+  margin: 10px 0;
+  border-radius: 12px;
+  background: var(--g-infoBg);
+  color: var(--g-infoInk);
+  line-height: 1.5;
+}
+.tras-guiada > :not(.alert) {
+  display: none;
+}
+.tras-guiada {
+  padding: 0;
+}
 .back-link + .section-kicker {
   display: block;
   margin-top: 14px;
@@ -3475,8 +4122,8 @@ label.check input {
   bottom: 0;
   left: 0;
   right: 0;
-  background: #fff;
-  border-top: 1px solid #dce8df;
+  background: var(--g-sur);
+  border-top: 1px solid var(--g-line);
   display: flex;
   justify-content: center;
   z-index: 5;
@@ -3488,7 +4135,7 @@ label.check input {
   max-width: 180px;
   border: 0;
   background: none;
-  color: #718c7e;
+  color: var(--g-ink2);
   font-size: 11px;
   font-weight: 700;
   min-height: 54px;
@@ -3500,21 +4147,21 @@ label.check input {
   line-height: 26px;
 }
 .bottom-nav button.active {
-  color: #185c4c;
-  background: #eef7ee;
+  color: var(--g-accSoftInk);
+  background: var(--g-accSoft);
 }
 .app-shell {
   min-height: 100vh;
-  background: #f3f7f3;
-  color: #193a32;
+  background: var(--g-bg);
+  color: var(--g-ink);
 }
 .wrap {
   max-width: 760px;
   margin: auto;
 }
 .top {
-  background: #185c4c;
-  color: white;
+  background: var(--g-acc);
+  color: var(--g-onAcc);
   padding: 32px 20px 60px;
 }
 .top h1 {
@@ -3524,7 +4171,7 @@ label.check input {
 }
 .top p {
   margin: 0;
-  color: #cfe4da;
+  color: var(--g-onAcc);
 }
 .eyebrow {
   font-size: 10px;
@@ -3536,8 +4183,8 @@ label.check input {
   margin-top: -35px;
 }
 .card {
-  background: #fff;
-  border: 1px solid #e0eae4;
+  background: var(--g-sur);
+  border: 1px solid var(--g-line);
   border-radius: 16px;
   padding: 20px;
   margin-bottom: 14px;
@@ -3551,7 +4198,7 @@ label.check input {
 .hint {
   font-size: 13px;
   line-height: 1.5;
-  color: #647e70;
+  color: var(--g-ink2);
   margin: 8px 0 14px;
 }
 .grid {
@@ -3568,16 +4215,16 @@ label {
   gap: 6px;
   font-size: 13px;
   font-weight: 700;
-  color: #48695c;
+  color: var(--g-ink2);
 }
 input,
 select {
   width: 100%;
-  border: 1px solid #cbdcd1;
-  background: #fbfdfb;
+  border: 1px solid var(--g-line);
+  background: var(--g-sur2);
   border-radius: 9px;
   padding: 11px;
-  color: #193a32;
+  color: var(--g-ink);
   font: inherit;
 }
 button {
@@ -3599,17 +4246,17 @@ button:disabled {
   justify-content: center;
 }
 .primary {
-  background: #185c4c;
-  color: #fff;
+  background: var(--g-acc);
+  color: var(--g-onAcc);
   border: 0;
   margin-top: 16px;
   width: 100%;
 }
 .secondary,
 .file-button {
-  background: #f5faf6;
-  border: 1px solid #b8cebf;
-  color: #185c4c;
+  background: var(--g-accSoft);
+  border: 1px solid var(--g-line);
+  color: var(--g-accSoftInk);
 }
 .file-button {
   cursor: pointer;
